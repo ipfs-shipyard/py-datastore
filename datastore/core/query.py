@@ -1,4 +1,5 @@
-from .key import Key
+from functools import total_ordering, cmp_to_key
+from datastore.core.key import Key
 
 
 def _object_getattr(obj, field):
@@ -87,6 +88,10 @@ def chain_gen(iterables):
             yield item
 
 
+def is_iterable(obj):
+    return hasattr(obj, '__iter__') or hasattr(obj, '__getitem__')
+
+
 class Filter(object):
     """Represents a Filter for a specific field and its value.
   
@@ -143,9 +148,9 @@ class Filter(object):
         if not isinstance(value, self.value.__class__) and not self.value is None and not value is None:
             value = self.value.__class__(value)
 
-        return self.valuePasses(value)
+        return self.value_passes(value)
 
-    def valuePasses(self, value):
+    def value_passes(self, value):
         """Returns whether this value passes this filter"""
         return self._conditional_cmp[self.op](value, self.value)
 
@@ -238,36 +243,37 @@ class Order(object):
     def __hash__(self):
         return hash(repr(self))
 
-    def isAscending(self):
+    def is_ascending(self):
         return self.op == '+'
 
-    def isDescending(self):
-        return not self.isAscending()
+    def is_descending(self):
+        return not self.is_ascending()
 
-    def keyfn(self, obj):
+    def key_fn(self, obj):
         """A key function to be used in pythonic sort operations."""
         return self.object_getattr(obj, self.field)
 
     @classmethod
-    def multipleOrderComparison(cls, orders):
+    def multiple_order_comparison(cls, orders):
         """Returns a function that will compare two items according to `orders`"""
-        comparers = [(o.keyfn, 1 if o.isAscending() else -1) for o in orders]
+        comparers = [(o.key_fn, 1 if o.is_ascending() else -1) for o in orders]
 
-        def cmpfn(a, b):
-            for keyfn, ascOrDesc in comparers:
-                comparison = cmp(keyfn(a), keyfn(b)) * ascOrDesc
+        def cmp_fn(a, b):
+            for key_fn, asc_or_desc in comparers:
+                comparison = ((key_fn(a) > key_fn(b)) - (key_fn(a) < key_fn(b))) * asc_or_desc
                 if comparison is not 0:
                     return comparison
             return 0
 
-        return cmpfn
+        return cmp_fn
 
     @classmethod
     def sorted(cls, items, orders):
         """Returns the elements in `items` sorted according to `orders`"""
-        return sorted(items, cmp=cls.multipleOrderComparison(orders))
+        return sorted(items, key=cmp_to_key(cls.multiple_order_comparison(orders)))
 
 
+@total_ordering
 class Query(object):
     """A Query describes a set of objects.
   
@@ -383,8 +389,11 @@ class Query(object):
         self.filters.append(filter)
         return self  # for chaining
 
-    def __cmp__(self, other):
-        return cmp(self.dict(), other.dict())
+    def __eq__(self, other):
+        return self.dict() == other.dict()
+
+    def __lt__(self, other):
+        return self.dict() < other.dict()
 
     def __hash__(self):
         return hash(repr(self))
@@ -440,10 +449,6 @@ class Query(object):
             elif key in ['limit', 'offset', 'offset_key']:
                 setattr(query, key, value)
         return query
-
-
-def is_iterable(obj):
-    return hasattr(obj, '__iter__') or hasattr(obj, '__getitem__')
 
 
 class Cursor(object):

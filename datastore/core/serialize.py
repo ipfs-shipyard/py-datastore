@@ -1,5 +1,5 @@
 import json
-from .basic import ShimDatastore
+from datastore.core.basic import ShimDatastore
 
 default_serializer = json
 

@@ -1,4 +1,5 @@
 import uuid
+from functools import total_ordering
 from datastore.core.util import fasthash
 
 
@@ -32,6 +33,7 @@ class Namespace(str):
         return self.split(Namespace.namespace_delimiter)[-1]
 
 
+@total_ordering
 class Key:
     """
     A Key represents the unique identifier of an object.
@@ -185,18 +187,15 @@ class Key:
     def __len__(self):
         return len(self._string)
 
-    def __cmp__(self, other):
+    def __lt__(self, other):
         if isinstance(other, Key):
-            return cmp(self._string, other._string)
+            return self._string < other._string
         raise TypeError('other is not of type %s' % Key)
 
     def __eq__(self, other):
         if isinstance(other, Key):
             return self._string == other._string
         return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     @classmethod
     def random_key(cls):

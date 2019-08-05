@@ -524,7 +524,7 @@ class TestNestedPathDatastore(TestDatastore):
         opts['k4'] = Key('/ik/ji/hg/abcdefghijki')
         opts['depth'] = 3
         opts['length'] = 2
-        opts['keyfn'] = lambda key: key.name[::-1]
+        opts['key_fn'] = lambda key: key.name[::-1]
 
         self.subtest_nested_path_ds(**opts)
 

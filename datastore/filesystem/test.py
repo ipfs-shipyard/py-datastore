@@ -5,7 +5,7 @@ import unittest
 from datastore.core import serialize
 from datastore.core.test.test_basic import TestDatastore
 
-from . import FileSystemDatastore
+from datastore.filesystem import FileSystemDatastore
 
 
 class TestFileSystemDatastore(TestDatastore):

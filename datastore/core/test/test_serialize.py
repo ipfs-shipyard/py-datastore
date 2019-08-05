@@ -3,7 +3,7 @@ import unittest
 from datastore.core.key import Key
 from datastore.core.basic import DictDatastore
 from datastore.core.serialize import *
-from .test_basic import TestDatastore
+from datastore.core.test.test_basic import TestDatastore
 
 import pickle
 import bson

@@ -1,5 +1,5 @@
-from .key import Key
-from .query import Cursor
+from datastore.core.key import Key
+from datastore.core.query import Cursor
 
 
 class Datastore(object):
@@ -605,7 +605,7 @@ class NestedPathDatastore(KeyTransformDatastore):
         # assign the nesting variables
         self.nest_depth = kwargs.pop('depth', self._default_depth)
         self.nest_length = kwargs.pop('length', self._default_length)
-        self.nest_keyfn = kwargs.pop('keyfn', self._default_keyfn)
+        self.nest_keyfn = kwargs.pop('key_fn', self._default_keyfn)
 
         super(NestedPathDatastore, self).__init__(*args, **kwargs)
         self.keytransform = self.nestKey
