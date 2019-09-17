@@ -54,7 +54,7 @@ From pypi (using setuptools)::
 From source::
 
 
-    git clone https://github.com/datastore/datastore/
+    git clone https://github.com/ipfs/py-datastore/
     cd datastore
     sudo python setup.py install
 
@@ -72,7 +72,7 @@ was originally part of
 `py-dronestore<https://github.com/jbenet/py-dronestore>`_
 On December 2011, it was re-written as a standalone project.
 
-Project Homepage: https://github.com/datastore/datastore
+Project Homepage: https://github.com/ipfs/py-datastore
 
 Feel free to contact me. But please file issues in github first. Cheers!
 

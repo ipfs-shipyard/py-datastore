@@ -1,11 +1,11 @@
 # datastore
 
-[![Build Status](https://travis-ci.org/datastore/datastore.png?branch=master)](https://travis-ci.org/datastore/datastore)
-[![status](https://sourcegraph.com/api/repos/github.com/datastore/datastore/badges/status.png)](https://sourcegraph.com/github.com/datastore/datastore)
-[![xrefs](https://sourcegraph.com/api/repos/github.com/datastore/datastore/badges/xrefs.png)](https://sourcegraph.com/github.com/datastore/datastore)
-[![funcs](https://sourcegraph.com/api/repos/github.com/datastore/datastore/badges/funcs.png)](https://sourcegraph.com/github.com/datastore/datastore)
-[![top func](https://sourcegraph.com/api/repos/github.com/datastore/datastore/badges/top-func.png)](https://sourcegraph.com/github.com/datastore/datastore)
-[![Views in the last 24 hours](https://sourcegraph.com/api/repos/github.com/datastore/datastore/counters/views-24h.png)](https://sourcegraph.com/github.com/datastore/datastore)
+[![Build Status](https://travis-ci.org/ipfs/py-datastore.png?branch=master)](https://travis-ci.org/ipfs/py-datastore)
+[![status](https://sourcegraph.com/api/repos/github.com/ipfs/py-datastore/badges/status.png)](https://sourcegraph.com/github.com/ipfs/py-datastore)
+[![xrefs](https://sourcegraph.com/api/repos/github.com/ipfs/py-datastore/badges/xrefs.png)](https://sourcegraph.com/github.com/ipfs/py-datastore)
+[![funcs](https://sourcegraph.com/api/repos/github.com/ipfs/py-datastore/badges/funcs.png)](https://sourcegraph.com/github.com/ipfs/py-datastore)
+[![top func](https://sourcegraph.com/api/repos/github.com/ipfs/py-datastore/badges/top-func.png)](https://sourcegraph.com/github.com/ipfs/py-datastore)
+[![Views in the last 24 hours](https://sourcegraph.com/api/repos/github.com/ipfs/py-datastore/counters/views-24h.png)](https://sourcegraph.com/github.com/ipfs/py-datastore)
 
 
 ## simple, unified API for multiple data stores
@@ -47,7 +47,7 @@ From pypi (using setuptools):
 
 From source:
 
-    git clone https://github.com/datastore/datastore/
+    git clone https://github.com/ipfs/py-datastore/
     cd datastore
     sudo python setup.py install
 
@@ -79,7 +79,7 @@ was originally part of [py-dronestore](https://github.com/jbenet/py-dronestore).
 On December 2011, it was re-written as a standalone project.
 
 Project Homepage:
-[https://github.com/datastore/datastore](https://github.com/datastore/datastore)
+[https://github.com/ipfs/py-datastore](https://github.com/ipfs/py-datastore)
 
 Feel free to contact me. But please file issues in github first. Cheers!
 
