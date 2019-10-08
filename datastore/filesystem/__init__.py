@@ -1,11 +1,7 @@
-__version__ = '1.1'
+__version__ = '1.2'
 __author__ = 'Juan Batiz-Benet <juan@benet.ai>'
 __doc__ = """
-filesystem datastore implementation.
-
-Tested with:
-  * Journaled HFS+ (Mac OS X 10.7.2)
-
+Filesystem datastore implementation
 """
 
 from .filesystem import FileSystemDatastore

@@ -54,10 +54,10 @@ serialize.NonSerializer
 .. autoclass:: datastore.serialize.NonSerializer
    :members:
 
-serialize.prettyjson
+serialize.PrettyJSON
 --------------------
 
-.. autoclass:: datastore.serialize.prettyjson
+.. autoclass:: datastore.serialize.PrettyJSON
    :members:
 
 serialize.Stack
@@ -66,10 +66,10 @@ serialize.Stack
 .. autoclass:: datastore.serialize.Stack
    :members:
 
-serialize.map_serializer
+serialize.MapSerializer
 ------------------------
 
-.. autoclass:: datastore.serialize.map_serializer
+.. autoclass:: datastore.serialize.MapSerializer
    :members:
 
 

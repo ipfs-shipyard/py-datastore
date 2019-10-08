@@ -1,6 +1,6 @@
 import uuid
 from functools import total_ordering
-from datastore.core.util import fasthash
+from datastore.core.util import fast_hash
 
 
 class Namespace(str):
@@ -179,7 +179,7 @@ class Key:
         For our purposes, then, we are using a perhaps more expensive hash function
         that guarantees equal hash values given the same input.
         """
-        return fasthash.fast_hash(self)
+        return fast_hash(self)
 
     def __iter__(self):
         return iter(self._string)

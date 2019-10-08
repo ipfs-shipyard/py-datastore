@@ -40,15 +40,13 @@ class KeyTests(unittest.TestCase):
         self.assertTrue(Key(string).child('a') < Key(string).child('b'))
         self.assertTrue(Key(string) == Key(string))
 
-        # self.assertRaises(TypeError, cmp, Key(string), string)
-
-        split = fixed_string.split('/')
-        if len(split) > 1:
-            self.assertEqual(Key('/'.join(split[:-1])), Key(string).parent)
+        split_string = fixed_string.split('/')
+        if len(split_string) > 1:
+            self.assertEqual(Key('/'.join(split_string[:-1])), Key(string).parent)
         else:
             self.assertRaises(ValueError, lambda: Key(string).parent)
 
-        namespace = split[-1].split(':')
+        namespace = split_string[-1].split(':')
         if len(namespace) > 1:
             self.assertEqual(namespace[0], Key(string).type)
         else:
