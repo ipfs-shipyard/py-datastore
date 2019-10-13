@@ -7,7 +7,7 @@ class Namespace(str):
     """
     A Key Namespace is a string identifier.
   
-    A namespace can optionally include a field (delimited by ':')
+    A namespace can optionally include a type (delimited by ':')
   
     Example namespaces::
   
@@ -21,15 +21,15 @@ class Namespace(str):
         return "Namespace('%s')" % self
 
     @property
-    def field(self):
-        """returns the `field` part of this namespace, if any."""
+    def type(self):
+        """returns the `type` part of this namespace, if any."""
         if Namespace.namespace_delimiter in self:
             return self.split(Namespace.namespace_delimiter)[0]
         return ''
 
     @property
-    def value(self):
-        """returns the `value` part of this namespace."""
+    def name(self):
+        """returns the `name` part of this namespace."""
         return self.split(Namespace.namespace_delimiter)[-1]
 
 
@@ -102,13 +102,13 @@ class Key:
 
     @property
     def name(self):
-        """Returns the name of this Key, the value of the last namespace."""
-        return Namespace(self.list[-1]).value
+        """Returns the name of this Key, the name of the last namespace."""
+        return Namespace(self.list[-1]).name
 
     @property
     def type(self):
-        """Returns the type of this Key, the field of the last namespace."""
-        return Namespace(self.list[-1]).field
+        """Returns the type of this Key, the type of the last namespace."""
+        return Namespace(self.list[-1]).type
 
     def instance(self, other):
         """Returns an instance Key, by appending a name to the namespace."""

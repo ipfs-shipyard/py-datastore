@@ -1,6 +1,32 @@
-.idea
+# Temporary files used by some editors
+*.swp
+*~
 
-datastore/rough_pad.py
+# Temporary files created during Python file loading
+*.pyc
+**/__pycache__/
+
+# Project storage of some editors
+/.idea
+/.project
+/.settings
+/.vscode
+
+# Stuff that never was meant to be public
+/+junk
+
+# Build artefacts
+/coverage/
+/build/
+/dist/
+
+# Documentation build artefacts
+docs/build/
+
+# Testing artefacts
+.coverage
+.pytest_cache/
+.tox/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
