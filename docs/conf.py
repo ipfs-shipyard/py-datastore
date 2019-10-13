@@ -238,7 +238,6 @@ class Mock(object):
 
 # name all modules to mock
 MOCK_MODULES = [
-  'bson',
   'pymongo',
   'pylibmc',
   'redis',

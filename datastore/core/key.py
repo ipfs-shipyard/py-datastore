@@ -190,12 +190,12 @@ class Key:
     def __lt__(self, other):
         if isinstance(other, Key):
             return self._string < other._string
-        raise TypeError('other is not of type %s' % Key)
+        raise NotImplementedError('The second operand is not of type %s' % Key)
 
     def __eq__(self, other):
         if isinstance(other, Key):
             return self._string == other._string
-        return False
+        raise NotImplementedError('The second operand is not of type %s' % Key)
 
     @classmethod
     def random_key(cls):

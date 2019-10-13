@@ -2,16 +2,6 @@ import os
 from datastore import Datastore, Query
 
 
-def ensure_directory_exists(directory):
-    """Ensures `directory` exists. May make `directory` and intermediate dirs.
-    Raises RuntimeError if `directory` is a file.
-    """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    elif os.path.isfile(directory):
-        raise RuntimeError('Path %s is a file, not a directory.' % directory)
-
-
 class FileSystemDatastore(Datastore):
     """Simple flat-file datastore.
 
@@ -86,7 +76,7 @@ class FileSystemDatastore(Datastore):
         if not root:
             raise ValueError('root path must not be empty (\'.\' for current directory)')
 
-        ensure_directory_exists(root)
+        os.makedirs(root, exist_ok=True)
 
         self.object_extension = '.obj'
         self.ignore_list = list()
@@ -121,7 +111,7 @@ class FileSystemDatastore(Datastore):
     @staticmethod
     def _write_object(path, value):
         """write out `object` to file at `path`"""
-        ensure_directory_exists(os.path.dirname(path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
 
         with open(path, 'w') as f:
             f.write(value)

@@ -1,6 +1,6 @@
 import unittest
 import hashlib
-import nanotime
+import time
 
 from datastore.core.key import Key
 from datastore.core.query import Filter, Order, Query, Cursor
@@ -11,8 +11,8 @@ def version_objects():
     sr1['key'] = '/ABCD'
     sr1['hash'] = hashlib.sha1('herp').hexdigest()
     sr1['parent'] = '0000000000000000000000000000000000000000'
-    sr1['created'] = nanotime.now().nanoseconds()
-    sr1['committed'] = nanotime.now().nanoseconds()
+    sr1['created'] = time.time_ns()
+    sr1['committed'] = time.time_ns()
     sr1['attributes'] = {'str': {'value': 'herp'}}
     sr1['type'] = 'Hurr'
 
@@ -20,8 +20,8 @@ def version_objects():
     sr2['key'] = '/ABCD'
     sr2['hash'] = hashlib.sha1('derp').hexdigest()
     sr2['parent'] = hashlib.sha1('herp').hexdigest()
-    sr2['created'] = nanotime.now().nanoseconds()
-    sr2['committed'] = nanotime.now().nanoseconds()
+    sr2['created'] = time.time_ns()
+    sr2['committed'] = time.time_ns()
     sr2['attributes'] = {'str': {'value': 'derp'}}
     sr2['type'] = 'Hurr'
 
@@ -29,8 +29,8 @@ def version_objects():
     sr3['key'] = '/ABCD'
     sr3['hash'] = hashlib.sha1('lerp').hexdigest()
     sr3['parent'] = hashlib.sha1('derp').hexdigest()
-    sr3['created'] = nanotime.now().nanoseconds()
-    sr3['committed'] = nanotime.now().nanoseconds()
+    sr3['created'] = time.time_ns()
+    sr3['committed'] = time.time_ns()
     sr3['attributes'] = {'str': {'value': 'lerp'}}
     sr3['type'] = 'Hurr'
 
@@ -225,8 +225,8 @@ class TestFilter(unittest.TestCase):
         self.assertFilter(feqzero, vs, vs[0:1])
 
     def test_object(self):
-        t1 = nanotime.now()
-        t2 = nanotime.now()
+        t1 = time.time_ns()
+        t2 = time.time_ns()
 
         f1 = Filter('key', '>', '/A')
         f2 = Filter('key', '<', '/A')
@@ -344,7 +344,7 @@ class TestQuery(unittest.TestCase):
 
     def test_basic(self):
 
-        now = nanotime.now().nanoseconds()
+        now = time.time_ns()
 
         q1 = Query(Key('/'), limit=100)
         q2 = Query(Key('/'), offset=200)

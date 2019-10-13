@@ -42,22 +42,3 @@ from .query import Cursor
 
 # import serialize
 from .serialize import SerializerShimDatastore
-
-# patch datastore with core variables
-import datastore
-
-datastore.__version__ = __version__
-datastore.__author__ = __author__
-datastore.__email__ = __email__
-
-# for k, v in locals().items():
-#     if k in ['datastore']:
-#         continue
-#
-#     if k.startswith('__'):
-#         continue
-#
-#     if hasattr(datastore, k):
-#         continue
-#
-#     setattr(datastore, k, v)
