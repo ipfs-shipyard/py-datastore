@@ -14,10 +14,7 @@ description-file = "README.md"
 # Unfortunately these currently need to be duplicated from `requirements.txt`
 requires-python = ">=3.7"
 
-# TODO
-requires = [
-	''
-]
+requires = []
 
 classifiers = [
 	"Development Status :: In Progress",

@@ -1,4 +1,5 @@
 from functools import total_ordering, cmp_to_key
+import collections
 from datastore.core.key import Key
 
 
@@ -83,13 +84,14 @@ def offset_gen(offset, iterable, skip_signal=None):
 
 def chain_gen(iterables):
     """A generator that chains `iterables`."""
+
+    # TODO: Remove this? (Its not used anywhere else)
     for iterable in iterables:
-        for item in iterable:
-            yield item
+        yield from iterable
 
 
 def is_iterable(obj):
-    return hasattr(obj, '__iter__') or hasattr(obj, '__getitem__')
+    return isinstance(obj, collections.abc.Iterable)
 
 
 class Filter(object):
@@ -161,10 +163,9 @@ class Filter(object):
         return "Filter('%s', '%s', %s)" % (self.field, self.op, repr(self.value))
 
     def __eq__(self, o):
-        return self.field == o.field and self.op == o.op and self.value == o.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if isinstance(o, Filter):
+            return self.field == o.field and self.op == o.op and self.value == o.value
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))
@@ -235,10 +236,9 @@ class Order(object):
         return "Order('%s%s')" % (self.op, self.field)
 
     def __eq__(self, other):
-        return self.field == other.type and self.op == other.op
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if isinstance(other, Order):
+            return self.field == other.field and self.op == other.op
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))
@@ -390,10 +390,14 @@ class Query(object):
         return self  # for chaining
 
     def __eq__(self, other):
-        return self.dict() == other.dict()
+        if isinstance(other, Query):
+            return self.dict() == other.dict()
+        return NotImplemented
 
     def __lt__(self, other):
-        return self.dict() < other.dict()
+        if isinstance(other, Query):
+            return self.dict() < other.dict()
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))
@@ -479,17 +483,16 @@ class Cursor(object):
         self._iterator = iter(self._iterable)
         return self
 
-    def next(self):
+    def __next__(self):
         """Iterator next. Build up count of returned elements during iteration."""
 
         # if iteration has not begun, begin it.
         if not self._iterator:
             self.__iter__()
 
-        next = self._iterator.next()
-        if next is not StopIteration:
-            self._returned_inc(next)
-        return next
+        value = next(self._iterator)  # This will raise `StopIteration` when done
+        self._returned_inc(value)
+        return value
 
     def _skipped_inc(self, item):
         """A function to increment the skipped count."""
