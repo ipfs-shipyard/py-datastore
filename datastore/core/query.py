@@ -163,10 +163,9 @@ class Filter(object):
         return "Filter('%s', '%s', %s)" % (self.field, self.op, repr(self.value))
 
     def __eq__(self, o):
-        return self.field == o.field and self.op == o.op and self.value == o.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if isinstance(o, Filter):
+            return self.field == o.field and self.op == o.op and self.value == o.value
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))
@@ -237,10 +236,9 @@ class Order(object):
         return "Order('%s%s')" % (self.op, self.field)
 
     def __eq__(self, other):
-        return self.field == other.type and self.op == other.op
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if isinstance(other, Order):
+            return self.field == other.field and self.op == other.op
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))
@@ -392,10 +390,14 @@ class Query(object):
         return self  # for chaining
 
     def __eq__(self, other):
-        return self.dict() == other.dict()
+        if isinstance(other, Query):
+            return self.dict() == other.dict()
+        return NotImplemented
 
     def __lt__(self, other):
-        return self.dict() < other.dict()
+        if isinstance(other, Query):
+            return self.dict() < other.dict()
+        return NotImplemented
 
     def __hash__(self):
         return hash(repr(self))

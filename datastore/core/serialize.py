@@ -1,22 +1,24 @@
+from abc import ABC, abstractmethod
 import json
-import collections
 from datastore.core.basic import ShimDatastore
 
 default_serializer = json
 
 
-class Serializer(object):
+class Serializer(ABC):
     """Serializing protocol. Serialized data must be a string."""
 
     @classmethod
+    @abstractmethod
     def loads(cls, value):
         """returns deserialized `value`."""
-        raise NotImplementedError()
+        pass
 
     @classmethod
+    @abstractmethod
     def dumps(cls, value):
         """returns serialized `value`."""
-        raise NotImplementedError()
+        pass
 
 
 class NonSerializer(Serializer):
@@ -64,26 +66,6 @@ class Stack(Serializer, list):
         """returns serialized `value`."""
         for serializer in self:
             value = serializer.dumps(value)
-        return value
-
-
-class MapSerializer(Serializer):
-    """map serializer that ensures the serialized value is a mapping type."""
-
-    sentinel = '@wrapped'
-
-    @classmethod
-    def loads(cls, value):
-        """Returns mapping type deserialized `value`."""
-        if len(value) == 1 and cls.sentinel in value:
-            value = value[cls.sentinel]
-        return value
-
-    @classmethod
-    def dumps(cls, value):
-        """returns mapping typed serialized `value`."""
-        if not isinstance(value, collections.abc.Mapping):
-            value = {cls.sentinel: value}
         return value
 
 
