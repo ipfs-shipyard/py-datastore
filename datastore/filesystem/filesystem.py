@@ -1,5 +1,5 @@
 import os
-import datastore
+from datastore import Datastore, Query
 
 
 def ensure_directory_exists(directory):
@@ -12,7 +12,7 @@ def ensure_directory_exists(directory):
         raise RuntimeError('Path %s is a file, not a directory.' % directory)
 
 
-class FileSystemDatastore(datastore.Datastore):
+class FileSystemDatastore(Datastore):
     """Simple flat-file datastore.
 
     FileSystemDatastore will store objects in independent files in the host's
@@ -68,13 +68,12 @@ class FileSystemDatastore(datastore.Datastore):
         >>> ds.get(hello)
         'world'
         >>> ds.delete(hello)
+        >>> ds.contains(hello)
+        False
         >>> ds.get(hello)
         None
 
     """
-
-    object_extension = '.obj'
-    ignore_list = list()
 
     def __init__(self, root, case_sensitive=True):
         """Initialize the datastore with given root directory `root`.
@@ -89,10 +88,12 @@ class FileSystemDatastore(datastore.Datastore):
 
         ensure_directory_exists(root)
 
+        self.object_extension = '.obj'
+        self.ignore_list = list()
         self.root_path = root
         self.case_sensitive = bool(case_sensitive)
 
-    # object pathing
+    # object paths
 
     def relative_path(self, key):
         """Returns the relative path for given `key`"""
@@ -139,15 +140,16 @@ class FileSystemDatastore(datastore.Datastore):
 
         return file_contents
 
-    def _read_object_gen(self, iterable):
+    @staticmethod
+    def _read_object_gen(iterable):
         """Generator that reads objects in from filenames in `iterable`."""
         for filename in iterable:
-            yield self._read_object(filename)
+            yield FileSystemDatastore._read_object(filename)
 
     # Datastore implementation
 
     def get(self, key):
-        """Return the object named by key or None if it does not exist.
+        """Return the object named by key, or None, if it does not exist.
 
         Args:
           key: Key naming the object to retrieve
@@ -156,7 +158,7 @@ class FileSystemDatastore(datastore.Datastore):
           object or None
         """
         path = self.object_path(key)
-        return self._read_object(path)
+        return FileSystemDatastore._read_object(path)
 
     def put(self, key, value):
         """Stores the object `value` named by `key`.
@@ -166,7 +168,7 @@ class FileSystemDatastore(datastore.Datastore):
           value: the object to store.
         """
         path = self.object_path(key)
-        self._write_object(path, value)
+        FileSystemDatastore._write_object(path, value)
 
     def delete(self, key):
         """Removes the object named by `key`.
@@ -188,7 +190,7 @@ class FileSystemDatastore(datastore.Datastore):
         Args:
           query: Query object describing the objects to return.
 
-        Raturns:
+        Returns:
           Cursor with all objects matching criteria
         """
         path = self.path(query.key)
@@ -197,7 +199,7 @@ class FileSystemDatastore(datastore.Datastore):
             filenames = os.listdir(path)
             filenames = list(set(filenames) - set(self.ignore_list))
             filenames = map(lambda f: os.path.join(path, f), filenames)
-            iterable = self._read_object_gen(filenames)
+            iterable = FileSystemDatastore._read_object_gen(filenames)
         else:
             iterable = list()
 

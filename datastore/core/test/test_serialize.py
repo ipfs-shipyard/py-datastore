@@ -36,7 +36,7 @@ class TestSerialize(TestDatastore):
         self.assertEqual(values_deserialized, values_raw)
 
         # test stack
-        stack = Stack([json, map_serializer, bson])
+        stack = Stack([json, MapSerializer, bson])
         values_serialized = map(stack.dumps, values_raw)
         values_deserialized = map(stack.loads, values_serialized)
         self.assertEqual(values_deserialized, values_raw)
@@ -88,16 +88,16 @@ class TestSerialize(TestDatastore):
     def test_serializer_shim(self):
 
         self.subtest_serializer_shim(json)
-        self.subtest_serializer_shim(prettyjson)
+        self.subtest_serializer_shim(PrettyJSON)
         self.subtest_serializer_shim(pickle)
-        self.subtest_serializer_shim(map_serializer)
+        self.subtest_serializer_shim(MapSerializer)
         self.subtest_serializer_shim(bson)
         self.subtest_serializer_shim(default_serializer)  # module default
 
-        self.subtest_serializer_shim(Stack([map_serializer]))
-        self.subtest_serializer_shim(Stack([map_serializer, bson]))
-        self.subtest_serializer_shim(Stack([json, map_serializer, bson]))
-        self.subtest_serializer_shim(Stack([json, map_serializer, bson, pickle]))
+        self.subtest_serializer_shim(Stack([MapSerializer]))
+        self.subtest_serializer_shim(Stack([MapSerializer, bson]))
+        self.subtest_serializer_shim(Stack([json, MapSerializer, bson]))
+        self.subtest_serializer_shim(Stack([json, MapSerializer, bson, pickle]))
 
     def test_has_interface_check(self):
         self.assertTrue(hasattr(Serializer, 'implements_serializer_interface'))

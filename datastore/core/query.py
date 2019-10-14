@@ -145,7 +145,7 @@ class Filter(object):
 
         # TODO: which way should the direction go here? it may make more sense to
         #       convert the passed-in value instead. Or try both? Or not at all?
-        if not isinstance(value, self.value.__class__) and not self.value is None and not value is None:
+        if not isinstance(value, self.value.__class__) and self.value is not None and value is not None:
             value = self.value.__class__(value)
 
         return self.value_passes(value)
@@ -235,7 +235,7 @@ class Order(object):
         return "Order('%s%s')" % (self.op, self.field)
 
     def __eq__(self, other):
-        return self.field == other.field and self.op == other.op
+        return self.field == other.type and self.op == other.op
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -423,7 +423,7 @@ class Query(object):
         if self.offset_key:
             d['offset_key'] = str(self.offset_key)
         if len(self.filters) > 0:
-            d['filter'] = [[f.field, f.op, f.value] for f in self.filters]
+            d['filter'] = [[f.type, f.op, f.name] for f in self.filters]
         if len(self.orders) > 0:
             d['order'] = [str(o) for o in self.orders]
 

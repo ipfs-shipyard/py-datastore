@@ -10,12 +10,12 @@ class Serializer(object):
     @classmethod
     def loads(cls, value):
         """returns deserialized `value`."""
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @classmethod
     def dumps(cls, value):
         """returns serialized `value`."""
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @staticmethod
     def implements_serializer_interface(cls):
@@ -39,7 +39,7 @@ class NonSerializer(Serializer):
         return value
 
 
-class prettyjson(Serializer):
+class PrettyJSON(Serializer):
     """json wrapper serializer that pretty-prints.
     Useful for human readable values and versioning.
     """
@@ -50,9 +50,9 @@ class prettyjson(Serializer):
         return json.loads(value)
 
     @classmethod
-    def dumps(cls, value):
+    def dumps(cls, value, indent=1):
         """returns json serialized `value` (pretty-printed)."""
-        return json.dumps(value, sort_keys=True, indent=1)
+        return json.dumps(value, sort_keys=True, indent=indent)
 
 
 class Stack(Serializer, list):
@@ -71,7 +71,7 @@ class Stack(Serializer, list):
         return value
 
 
-class map_serializer(Serializer):
+class MapSerializer(Serializer):
     """map serializer that ensures the serialized value is a mapping type."""
 
     sentinel = '@wrapped'
@@ -149,8 +149,8 @@ class SerializerShimDatastore(ShimDatastore):
 
         # ensure serializer works
         test = {'value': repr(self)}
-        errstr = 'Serializer error: serialized value does not match original'
-        assert self.serializer.loads(self.serializer.dumps(test)) == test, errstr
+        error_str = 'Serializer error: serialized value does not match original'
+        assert self.serializer.loads(self.serializer.dumps(test)) == test, error_str
 
     def serializedValue(self, value):
         """Returns serialized `value` or None."""
@@ -215,7 +215,7 @@ class SerializerShimDatastore(ShimDatastore):
 def shim(datastore, serializer=None):
     """Return a SerializerShimDatastore wrapping `datastore`.
   
-    Can be used as a syntacticly-nicer eay to wrap a datastore with a
+    Can be used as a syntactically-nicer eay to wrap a datastore with a
     serializer::
   
         my_store = datastore.serialize.shim(my_store, json)
