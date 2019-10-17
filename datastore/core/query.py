@@ -255,7 +255,7 @@ class Order(object):
 		def cmp_fn(a, b):
 			for key_fn, asc_or_desc in comparers:
 				comparison = ((key_fn(a) > key_fn(b)) - (key_fn(a) < key_fn(b))) * asc_or_desc
-				if comparison is not 0:
+				if comparison != 0:
 					return comparison
 			return 0
 

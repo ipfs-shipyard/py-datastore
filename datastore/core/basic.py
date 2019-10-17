@@ -115,7 +115,7 @@ class DictDatastore(Datastore):
 	def _collection(self, key):
 		"""Returns the namespace collection for `key`."""
 		collection = str(key.path)
-		if not collection in self._items:
+		if collection not in self._items:
 			self._items[collection] = dict()
 		return self._items[collection]
 
@@ -589,7 +589,7 @@ class NestedPathDatastore(KeyTransformDatastore):
 
 	_default_depth = 3
 	_default_length = 2
-	_default_keyfn = lambda key: key.name
+	_default_keyfn = lambda key: key.name  # noqa
 	_default_keyfn = staticmethod(_default_keyfn)
 
 	def __init__(self, *args, **kwargs):
@@ -699,7 +699,7 @@ class SymlinkDatastore(ShimDatastore):
 			key = Key(value)
 			if key.name == self.sentinel:
 				return key.parent
-		except:
+		except ValueError:
 			pass
 		return None
 

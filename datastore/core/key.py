@@ -33,8 +33,7 @@ class Namespace(str):
 
 @total_ordering
 class Key:
-	"""
-	A Key represents the unique identifier of an object.
+	"""A Key represents the unique identifier of an datastore object
 	
 	Our Key scheme is inspired by file systems and the Google App Engine key
 	model.
