@@ -27,14 +27,14 @@ Examples
 Hello World
 ___________
 
-    >>> import datastore.core
-    >>> ds = datastore.DictDatastore()
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>> ds = datastore.DictDatastore()
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
