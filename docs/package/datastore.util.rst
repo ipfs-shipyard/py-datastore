@@ -5,6 +5,6 @@ datastore.core.util
 -----------------------------------
 
 .. automodule:: datastore.util.fasthash
-    :members:
-    :undoc-members:
-    :show-inheritance:
+	:members:
+	:undoc-members:
+	:show-inheritance:

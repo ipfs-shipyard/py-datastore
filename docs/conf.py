@@ -213,8 +213,8 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'datastore', u'datastore Documentation',
-     [u'Juan Batiz-Benet'], 1)
+	('index', 'datastore', u'datastore Documentation',
+	 [u'Juan Batiz-Benet'], 1)
 ]
 
 
@@ -230,20 +230,20 @@ intersphinx_mapping = {'http://docs.python.org/': None}
 import sys
 
 class Mock(object):
-  def __init__(self, *args, **kwargs):
-    pass
+	def __init__(self, *args, **kwargs):
+		pass
 
-  def __getattr__(self, name):
-    return Mock()
+	def __getattr__(self, name):
+		return Mock()
 
 # name all modules to mock
 MOCK_MODULES = [
-  'pymongo',
-  'pylibmc',
-  'redis',
-  'pylru',
-  'dulwich'
+	'pymongo',
+	'pylibmc',
+	'redis',
+	'pylru',
+	'dulwich'
 ]
 
 for mod_name in MOCK_MODULES:
-  sys.modules[mod_name] = Mock()
+	sys.modules[mod_name] = Mock()

@@ -7,7 +7,7 @@ Subpackages
 
 .. toctree::
 
-    datastore.core
-    datastore.util
-    datastore.filesystem
+	datastore.core
+	datastore.util
+	datastore.filesystem
 

@@ -15,13 +15,13 @@ To address this use case in an elegant way, datastore uses the notion of a
 datastore. For example, a json serializer datastore could implement ``get``
 and ``put`` as::
 
-    def get(self, key):
-      value = self.child_datastore.get(key)
-      return json.loads(value)
+	def get(self, key):
+		value = self.child_datastore.get(key)
+		return json.loads(value)
 
-    def put(self, key, value):
-      value = json.dumps(value)
-      self.child_datastore.put(key, value)
+	def put(self, key, value):
+		value = json.dumps(value)
+		self.child_datastore.put(key, value)
 
 
 ShimDatastore

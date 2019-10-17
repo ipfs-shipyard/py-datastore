@@ -29,7 +29,7 @@ The :ref:`api` contains documentation of the core library.
 .. toctree::
    :maxdepth: 2
 
-   api/index
+	api/index
 
 
 Package Hierarchy:
@@ -37,7 +37,7 @@ Package Hierarchy:
 .. toctree::
    :maxdepth: 4
 
-   package/datastore
+	package/datastore
 
 
 Install
@@ -45,18 +45,18 @@ Install
 
 From pypi (using pip)::
 
-    sudo pip install datastore
+	sudo pip install datastore
 
 From pypi (using setuptools)::
 
-    sudo easy_install datastore
+	sudo easy_install datastore
 
 From source::
 
 
-    git clone https://github.com/ipfs/py-datastore/
-    cd datastore
-    sudo python setup.py install
+	git clone https://github.com/ipfs/py-datastore/
+	cd datastore
+	sudo python setup.py install
 
 License
 -------
@@ -96,102 +96,102 @@ here is Hello World in various datastores. Note the common code.
 Hello Dict
 ----------
 
-    >>> import datastore.core
-    >>>
-    >>> ds = datastore.DictDatastore()
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>>
+	>>> ds = datastore.DictDatastore()
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 Hello filesystem
 ----------------
 
-    >>> import datastore.filesystem
-    >>>
-    >>> ds = datastore.filesystem.FileSystemDatastore('/tmp/.test_datastore')
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.filesystem
+	>>>
+	>>> ds = datastore.filesystem.FileSystemDatastore('/tmp/.test_datastore')
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 Hello Serialization
 -------------------
 
-    >>> import datastore.core
-    >>> import json
-    >>>
-    >>> ds_child = datastore.DictDatastore()
-    >>> ds = datastore.serialize.shim(ds_child, json)
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>> import json
+	>>>
+	>>> ds_child = datastore.DictDatastore()
+	>>> ds = datastore.serialize.shim(ds_child, json)
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 
 
 Hello Tiered Access
 -------------------
 
-    >>> import pymongo
-    >>> import datastore.core
-    >>>
-    >>> from datastore.mongo import MongoDatastore
-    >>> from datastore.pylru import LRUCacheDatastore
-    >>> from datastore.filesystem import FileSystemDatastore
-    >>>
-    >>> conn = pymongo.Connection()
-    >>> mongo = MongoDatastore(conn.test_db)
-    >>>
-    >>> cache = LRUCacheDatastore(1000)
-    >>> fs = FileSystemDatastore('/tmp/.test_db')
-    >>>
-    >>> ds = datastore.TieredDatastore([cache, mongo, fs])
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import pymongo
+	>>> import datastore.core
+	>>>
+	>>> from datastore.mongo import MongoDatastore
+	>>> from datastore.pylru import LRUCacheDatastore
+	>>> from datastore.filesystem import FileSystemDatastore
+	>>>
+	>>> conn = pymongo.Connection()
+	>>> mongo = MongoDatastore(conn.test_db)
+	>>>
+	>>> cache = LRUCacheDatastore(1000)
+	>>> fs = FileSystemDatastore('/tmp/.test_db')
+	>>>
+	>>> ds = datastore.TieredDatastore([cache, mongo, fs])
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 
 Hello Sharding
 --------------
 
-    >>> import datastore.core
-    >>>
-    >>> shards = [datastore.DictDatastore() for i in range(0, 10)]
-    >>>
-    >>> ds = datastore.ShardedDatastore(shards)
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>>
+	>>> shards = [datastore.DictDatastore() for i in range(0, 10)]
+	>>>
+	>>> ds = datastore.ShardedDatastore(shards)
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None

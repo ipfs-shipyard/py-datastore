@@ -17,17 +17,17 @@ changing application code. Thus, one can leverage different datastores with
 different strengths without committing the application to one datastore
 throughout its lifetime. It looks like this:
 
-    +---------------+
-    |  application  |    <--- No cumbersome SQL or Mongo specific queries!
-    +---------------+
-            |            <--- simple datastore API calls
-    +---------------+
-    |   datastore   |    <--- datastore implementation for underlying db
-    +---------------+
-            |            <--- database specific calls
-    +---------------+
-    |  various dbs  |    <--- MySQL, Redis, MongoDB, FS, ...
-    +---------------+
+	+---------------+
+	|  application  |    <--- No cumbersome SQL or Mongo specific queries!
+	+---------------+
+	        |            <--- simple datastore API calls
+	+---------------+
+	|   datastore   |    <--- datastore implementation for underlying db
+	+---------------+
+	        |            <--- database specific calls
+	+---------------+
+	|  various dbs  |    <--- MySQL, Redis, MongoDB, FS, ...
+	+---------------+
 
 In addition, grouped datastores significantly simplify interesting data access
 patterns (such as caching and sharding).
@@ -39,17 +39,17 @@ patterns (such as caching and sharding).
 
 From pypi (using pip):
 
-    sudo pip install datastore
+	sudo pip install datastore
 
 From pypi (using setuptools):
 
-    sudo easy_install datastore
+	sudo easy_install datastore
 
 From source:
 
-    git clone https://github.com/ipfs/py-datastore/
-    cd datastore
-    sudo python setup.py install
+	git clone https://github.com/ipfs/py-datastore/
+	cd datastore
+	sudo python setup.py install
 
 ### Subprojects
 
@@ -115,82 +115,82 @@ newly-built docs.
 
 ### Hello World
 
-    >>> import datastore.core
-    >>> ds = datastore.DictDatastore()
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>> ds = datastore.DictDatastore()
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 #### Hello filesystem
 
-    >>> import datastore.filesystem
-    >>>
-    >>> ds = datastore.filesystem.FileSystemDatastore('/tmp/.test_datastore')
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.filesystem
+	>>>
+	>>> ds = datastore.filesystem.FileSystemDatastore('/tmp/.test_datastore')
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 
 #### Hello Tiered Access
 
 
-    >>> import pymongo
-    >>> import datastore.core
-    >>>
-    >>> from datastore.mongo import MongoDatastore
-    >>> from datastore.pylru import LRUCacheDatastore
-    >>> from datastore.filesystem import FileSystemDatastore
-    >>>
-    >>> conn = pymongo.Connection()
-    >>> mongo = MongoDatastore(conn.test_db)
-    >>>
-    >>> cache = LRUCacheDatastore(1000)
-    >>> fs = FileSystemDatastore('/tmp/.test_db')
-    >>>
-    >>> ds = datastore.TieredDatastore([cache, mongo, fs])
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import pymongo
+	>>> import datastore.core
+	>>>
+	>>> from datastore.mongo import MongoDatastore
+	>>> from datastore.pylru import LRUCacheDatastore
+	>>> from datastore.filesystem import FileSystemDatastore
+	>>>
+	>>> conn = pymongo.Connection()
+	>>> mongo = MongoDatastore(conn.test_db)
+	>>>
+	>>> cache = LRUCacheDatastore(1000)
+	>>> fs = FileSystemDatastore('/tmp/.test_db')
+	>>>
+	>>> ds = datastore.TieredDatastore([cache, mongo, fs])
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 
 #### Hello Sharding
 
-    >>> import datastore.core
-    >>>
-    >>> shards = [datastore.DictDatastore() for i in range(0, 10)]
-    >>>
-    >>> ds = datastore.ShardedDatastore(shards)
-    >>>
-    >>> hello = datastore.Key('hello')
-    >>> ds.put(hello, 'world')
-    >>> ds.contains(hello)
-    True
-    >>> ds.get(hello)
-    'world'
-    >>> ds.delete(hello)
-    >>> ds.get(hello)
-    None
+	>>> import datastore.core
+	>>>
+	>>> shards = [datastore.DictDatastore() for i in range(0, 10)]
+	>>>
+	>>> ds = datastore.ShardedDatastore(shards)
+	>>>
+	>>> hello = datastore.Key('hello')
+	>>> ds.put(hello, 'world')
+	>>> ds.contains(hello)
+	True
+	>>> ds.get(hello)
+	'world'
+	>>> ds.delete(hello)
+	>>> ds.get(hello)
+	None
 
 
 ## API
@@ -202,11 +202,11 @@ core methods must be implemented (get, put, delete, query).
 
 Return the object named by key or None if it does not exist.
 
-    Args:
-      key: Key naming the object to retrieve
+	Args:
+	  key: Key naming the object to retrieve
 
-    Returns:
-      object or None
+	Returns:
+	  object or None
 
 ### put(key, value)
 
@@ -214,16 +214,16 @@ Stores the object `value` named by `key`.
 How to serialize and store objects is up to the underlying datastore.
 It is recommended to use simple objects (strings, numbers, lists, dicts).
 
-    Args:
-      key: Key naming `value`
-      value: the object to store.
+	Args:
+	  key: Key naming `value`
+	  value: the object to store.
 
 ### delete(key)
 
 Removes the object named by `key`.
 
-    Args:
-      key: Key naming the object to remove.
+	Args:
+	  key: Key naming the object to remove.
 
 ### query(query):
 
@@ -232,11 +232,11 @@ Implementations of query will be the largest differentiating factor
 amongst datastores. All datastores **must** implement query, even using
 query's worst case scenario, see Query class for details.
 
-    Args:
-      query: Query object describing the objects to return.
+	Args:
+	  query: Query object describing the objects to return.
 
-    Returns:
-      iterable cursor with all objects matching criteria
+	Returns:
+	  iterable cursor with all objects matching criteria
 
 
 ### Specialized Features
@@ -261,14 +261,14 @@ Keys are meant to be unique across a system. Keys are hierarchical,
 incorporating increasingly specific namespaces. Thus keys can be deemed
 'children' or 'ancestors' of other keys.
 
-    Key('/Comedy')
-    Key('/Comedy/MontyPython')
+	Key('/Comedy')
+	Key('/Comedy/MontyPython')
 
 Also, every namespace can be parametrized to embed relevant object
 information. For example, the Key `name` (most specific namespace) could
 include the object type:
 
-    Key('/Comedy/MontyPython/Actor:JohnCleese')
-    Key('/Comedy/MontyPython/Sketch:CheeseShop')
-    Key('/Comedy/MontyPython/Sketch:CheeseShop/Character:Mousebender')
+	Key('/Comedy/MontyPython/Actor:JohnCleese')
+	Key('/Comedy/MontyPython/Sketch:CheeseShop')
+	Key('/Comedy/MontyPython/Sketch:CheeseShop/Character:Mousebender')
 
