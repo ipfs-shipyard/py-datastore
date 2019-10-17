@@ -1,5 +1,5 @@
 import os
-from datastore import Datastore, Query
+from datastore import Datastore
 
 
 class FileSystemDatastore(Datastore):
