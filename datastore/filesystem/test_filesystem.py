@@ -1,6 +1,5 @@
 import os
 import shutil
-import pytest
 
 from datastore.core import serialize
 from datastore.core.test.test_basic import TestDatastore
