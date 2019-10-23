@@ -2,7 +2,8 @@ import abc
 import json
 import typing
 
-from . import basic
+from . import binarystore
+from . import objectstore
 from . import key
 from . import query
 class util:  # noqa
@@ -93,7 +94,7 @@ def serialized_gen(serializer, iterable):
 		yield serializer.dumps(item)
 
 
-class SerializerAdapter(basic.Adapter):
+class SerializerAdapter(objectstore.Adapter):
 	"""Represents a Datastore that serializes and deserializes values.
 	
 	As data is ``put``, the serializer shim serializes it and ``put``s it into
@@ -112,10 +113,11 @@ class SerializerAdapter(basic.Adapter):
 	# value serializer
 	# override this with their own custom serializer on a class-wide or per-
 	# instance basis. If you plan to store mostly strings, use NonSerializer.
-	serializer = default_serializer
+	serializer = default_serializer  # type: Serializer
 	
 	
-	def __init__(self, datastore, serializer=None):
+	def __init__(self, datastore: binarystore.Datastore,
+	             serializer: typing.Union[Serializer, None] = None):
 		"""Initializes internals and tests the serializer.
 		
 		Arguments
@@ -146,11 +148,11 @@ class SerializerAdapter(basic.Adapter):
 		Returns:
 			object or None
 		"""
-		value = await util.stream.collect(self.child_datastore.get(key))  #FIXME
+		value = await (await self.child_datastore.get(key)).collect()  #FIXME
 		return self.serializer.loads(value) if value is not None else None
 	
 	
-	async def _put(self, key, value):
+	async def _put(self, key: key.Key, value: util.stream.ReceiveStream) -> None:
 		"""Stores the object `value` named by `key`.
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
@@ -184,17 +186,6 @@ class SerializerAdapter(basic.Adapter):
 		cursor._iterable = deserialized_gen(self.serializer, cursor._iterable)
 
 		return cursor
-
-
-def shim(datastore, serializer=None):
-	"""Return a SerializerShimDatastore wrapping `datastore`.
-	
-	Can be used as a syntactically-nicer eay to wrap a datastore with a
-	serializer::
-	
-		my_store = datastore.serialize.shim(my_store, json)
-	"""
-	return SerializerShimDatastore(datastore, serializer=serializer)
 
 
 """
