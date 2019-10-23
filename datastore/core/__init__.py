@@ -15,23 +15,29 @@ __email__ = 'juan@benet.ai, alexander@ninetailed.ninja'
 from .key import Key
 from .key import Namespace
 
-# import basic
-from .basic import Datastore
-from .basic import NullDatastore
-from .basic import DictDatastore
+# import binarystore, objectstore
+from .binarystore import Datastore     as BinaryDatastore
+from .binarystore import NullDatastore as BinaryNullDatastore
+from .binarystore import DictDatastore as BinaryDictDatastore
 
-from .basic import DatastoreAdapter
-from .basic import LoggingAdapter
-from .basic import KeyTransformAdapter
-from .basic import LowercaseKeyAdapter
-from .basic import NamespaceAdapter
-from .basic import NestedPathAdapter
-from .basic import DirectoryTreeAdapter
-from .basic import DatastoreDirectoryMixin
+from .objectstore import Datastore     as ObjectDatastore
+from .objectstore import NullDatastore as ObjectNullDatastore
+from .objectstore import DictDatastore as ObjectDictDatastore
 
-from .basic import DatastoreCollectionMixin
-from .basic import ShardedAdapter
-from .basic import TieredAdapter
+from .binarystore import Adapter as BinaryAdapter
+from .objectstore import Adapter as ObjectAdapter
+
+#from .basic import LoggingAdapter
+#from .basic import KeyTransformAdapter
+#from .basic import LowercaseKeyAdapter
+#from .basic import NamespaceAdapter
+#from .basic import NestedPathAdapter
+#from .basic import DirectoryTreeAdaoter
+#from .basic import DatastoreDirectoryMixin
+#
+#from .basic import DatastoreCollectionMixin
+#from .basic import ShardedAdapter
+#from .basic import TieredAdapter
 
 # import query
 from .query import Query
