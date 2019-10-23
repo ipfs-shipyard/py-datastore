@@ -262,7 +262,7 @@ class DictDatastore(Datastore):
 
 
 
-class ShimDatastore(Datastore):
+class Adapter(Datastore):
 	"""Represents a non-concrete datastore that adds functionality between the
 	   client and a lower-level datastore.
 	
@@ -348,7 +348,7 @@ class ShimDatastore(Datastore):
 
 
 
-class LoggingDatastore(ShimDatastore):
+class LoggingAdapter(Adapter):
 	"""Wraps a datastore with a logging shim."""
 
 	def __init__(self, child_datastore, logger=None):
@@ -404,8 +404,9 @@ class LoggingDatastore(ShimDatastore):
 		return await super().query(query)
 
 
-class KeyTransformDatastore(ShimDatastore):
-	"""Represents a simple ShimDatastore that applies a transform on all incoming
+
+class KeyTransformAdapter(Adapter):
+	"""Represents a simple DatastoreAdapter that applies a transform on all incoming
 	   keys. For example:
 
 		>>> import datastore.core
@@ -459,8 +460,8 @@ class KeyTransformDatastore(ShimDatastore):
 		return await super().query(query)
 
 
-class LowercaseKeyDatastore(KeyTransformDatastore):
-	"""Represents a simple ShimDatastore that lowercases all incoming keys.
+class LowercaseKeyAdapter(KeyTransformAdapter):
+	"""Represents a simple DatastoreAdapter that lowercases all incoming keys.
 	   For example:
 
 		>>> import datastore.core
@@ -494,8 +495,8 @@ class LowercaseKeyDatastore(KeyTransformDatastore):
 
 
 
-class NamespaceDatastore(KeyTransformDatastore):
-	"""Represents a simple ShimDatastore that namespaces all incoming keys.
+class NamespaceAdapter(KeyTransformAdapter):
+	"""Represents a simple DatastoreAdapter that namespaces all incoming keys.
 	   For example:
 
 		>>> import datastore.core
@@ -529,8 +530,8 @@ class NamespaceDatastore(KeyTransformDatastore):
 
 
 
-class NestedPathDatastore(KeyTransformDatastore):
-	"""Represents a simple ShimDatastore that shards/namespaces incoming keys.
+class NestedPathAdapter(KeyTransformAdapter):
+	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
 
 	Incoming keys are sharded into nested namespaces. The idea is to use the key
 	name to separate into nested namespaces. This is akin to the directory
@@ -624,7 +625,7 @@ class NestedPathDatastore(KeyTransformDatastore):
 
 
 
-class DirectoryDatastore(ShimDatastore):
+class DatastoreDirectoryMixin:
 	"""Datastore that allows manual tracking of directory entries.
 	
 	For example:
@@ -720,7 +721,7 @@ class DirectoryDatastore(ShimDatastore):
 
 
 
-class DirectoryTreeDatastore(DirectoryDatastore):
+class DirectoryTreeAdapter(DatastoreDirectoryMixin, Adapter):
 	"""Datastore that tracks directory entries, like in a filesystem.
 	All key changes cause changes in a collection-like directory.
 
@@ -789,7 +790,7 @@ class DirectoryTreeDatastore(DirectoryDatastore):
 
 
 
-class DatastoreCollection(ShimDatastore):
+class DatastoreCollectionMixin:
 	"""Represents a collection of datastores."""
 
 	def __init__(self, stores=[]):
@@ -826,7 +827,7 @@ class DatastoreCollection(ShimDatastore):
 		self._stores.insert(index, store)
 
 
-class TieredDatastore(DatastoreCollection):
+class TieredAdapter(Adapter, DatastoreCollectionMixin):
 	"""Represents a hierarchical collection of datastores.
 
 	Each datastore is queried in order. This is helpful to organize access
@@ -908,7 +909,7 @@ class TieredDatastore(DatastoreCollection):
 
 
 
-class ShardedDatastore(DatastoreCollection):
+class ShardedAdapter(Adapter, DatastoreCollectionMixin):
 	"""Represents a collection of datastore shards.
 
 	A datastore is selected based on a sharding function.

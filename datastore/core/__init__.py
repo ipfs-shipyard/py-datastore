@@ -20,22 +20,22 @@ from .basic import Datastore
 from .basic import NullDatastore
 from .basic import DictDatastore
 
-from .basic import ShimDatastore
-from .basic import LoggingDatastore
-from .basic import KeyTransformDatastore
-from .basic import LowercaseKeyDatastore
-from .basic import NamespaceDatastore
-from .basic import NestedPathDatastore
-from .basic import DirectoryTreeDatastore
-from .basic import DirectoryDatastore
+from .basic import DatastoreAdapter
+from .basic import LoggingAdapter
+from .basic import KeyTransformAdapter
+from .basic import LowercaseKeyAdapter
+from .basic import NamespaceAdapter
+from .basic import NestedPathAdapter
+from .basic import DirectoryTreeAdapter
+from .basic import DatastoreDirectoryMixin
 
-from .basic import DatastoreCollection
-from .basic import ShardedDatastore
-from .basic import TieredDatastore
+from .basic import DatastoreCollectionMixin
+from .basic import ShardedAdapter
+from .basic import TieredAdapter
 
 # import query
 from .query import Query
 from .query import Cursor
 
 # import serialize
-from .serialize import SerializerShimDatastore
+from .serialize import SerializerAdapter
