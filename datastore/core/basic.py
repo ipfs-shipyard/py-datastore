@@ -166,10 +166,7 @@ class DictDatastore(Datastore):
 		  key: Key naming `value`
 		  value: the object to store.
 		"""
-		if value is None:
-			self.delete(key)
-		else:
-			self._collection(key)[key] = value
+		self._collection(key)[key] = await value.collect()
 
 	async def delete(self, key):
 		"""Removes the object named by `key`.

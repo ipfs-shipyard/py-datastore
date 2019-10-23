@@ -1,4 +1,6 @@
+import abc
 import collections.abc
+import io
 import typing
 
 import trio.abc
@@ -10,12 +12,44 @@ async def collect(self):
 	
 	value = bytearray()
 	async with self:
-		async for chunk in self:
+		# Use “size”, if available, to try and read the entire stream's conents
+		# in one go
+		max_bytes = getattr(self, "size", None)
+		
+		while True:
+			chunk = await self.receive_some(max_bytes)
+			if len(chunk) < 1:
+				break
 			value += chunk
 	return bytes(value)
 
 
+
 class ReceiveStream(trio.abc.ReceiveStream):
+	"""A slightly extended version of `trio`'s standard interface for receiving byte streams.
+	
+	Attributes
+	----------
+	size
+		The size of the entire stream data in bytes, or `None` if unavailable
+	atime
+		Time of the entry's last access (before the current one) in seconds
+		since the Unix epoch, or `None` if unkown
+	mtime
+		Time of the entry's last modification in seconds since the Unix epoch,
+		or `None` if unknown
+	btime
+		Time of entry creation in seconds since the Unix epoch, or `None`
+		if unknown
+	"""
+	
+	# This will actually bind the function just like any other method when
+	# instantiating this class
+	collect = collect
+
+
+
+class WrapingReceiveStream(ReceiveStream):
 	"""Abstracts over various forms of synchronous and asynchronous returning of
 	   byte streams
 	"""
@@ -26,16 +60,26 @@ class ReceiveStream(trio.abc.ReceiveStream):
 	_ASYNC_TYPE_TRIO = 2
 	
 	def __init__(self, source):
+		# Handle special cases, so that we'll end up either with a synchronous
+		# or an asynchrous iterable (also tries to calculate the expected total
+		# stream size ahead of time for some known cases)
 		if isinstance(source, collections.abc.Awaitable):
 			async def await_iter_wrapper(source):
-				try:
 					yield await source
-				except Exception as exc:
-					source.athrow(exc)
-					raise
 			source = await_iter_wrapper(source)
 		elif isinstance(source, bytes):
+			self.size = len(source)
 			source = (source,)
+		elif isinstance(source, collections.abc.Sequence):
+			self.size = sum(len(item) for item in source)
+		elif isinstance(source, io.BytesIO):
+			# Ask in-memory stream for its remaining length, restoring its
+			# original state afterwards
+			pos = source.tell()
+			source.seek(0, io.SEEK_END)
+			self.size = source.tell() - pos
+			source.seek(pos, io.SEEK_SET)
+			
 		
 		self._buffer  = bytearray()
 		self._memview = None
@@ -50,10 +94,6 @@ class ReceiveStream(trio.abc.ReceiveStream):
 			self._source = iter(source)
 			self._async  = self._ASYNC_TYPE_SYNC
 	
-	
-	# This will bind the function as a normal method when instantiating
-	# this class
-	collect = collect
 	
 	
 	async def receive_some(self, max_bytes=None):
