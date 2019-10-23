@@ -93,7 +93,7 @@ def serialized_gen(serializer, iterable):
 		yield serializer.dumps(item)
 
 
-class SerializerShimDatastore(basic.ShimDatastore):
+class SerializerAdapter(basic.Adapter):
 	"""Represents a Datastore that serializes and deserializes values.
 	
 	As data is ``put``, the serializer shim serializes it and ``put``s it into
