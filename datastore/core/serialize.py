@@ -4,8 +4,8 @@ import typing
 
 from . import binarystore
 from . import objectstore
-from . import key
-from . import query
+from . import key   as key_
+from . import query as query_
 class util:  # noqa
 	from .util import stream
 
@@ -34,22 +34,6 @@ class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
 		pass
 
 
-class NonSerializer(Serializer):
-	"""Implements serializing protocol but does not serialize at all.
-	If only storing strings (or already-serialized values).
-	"""
-
-	@classmethod
-	def loads(cls, value):
-		"""returns `value`."""
-		return value
-
-	@classmethod
-	def dumps(cls, value):
-		"""returns `value`."""
-		return value
-
-
 class PrettyJSON(Serializer[T_co], typing.Generic[T_co]):
 	"""json wrapper serializer that pretty-prints.
 	Useful for human readable values and versioning.
@@ -63,7 +47,10 @@ class PrettyJSON(Serializer[T_co], typing.Generic[T_co]):
 	@classmethod
 	def dumps(cls, value: typing.List[T_co], indent: int = 1, encoding: str = "utf-8") -> bytes:
 		"""returns json serialized `value` (pretty-printed)."""
-		return json.dumps(value, sort_keys=True, indent=indent)
+		result = bytearray()
+		for item in value:
+			result += json.dumps(value, sort_keys=True, indent=indent).encode(encoding)
+		return bytes(result)
 
 class SerializerAdapter(objectstore.Datastore[T_co]):
 	"""Represents a Datastore that serializes and deserializes values.
@@ -101,7 +88,6 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		serializer
 			A serializer object (responds to loads and dumps).
 		"""
-		super().__init__(datastore)
 		self.child_datastore = datastore
 		self.serializer      = serializer
 
@@ -112,11 +98,10 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		Retrieves the value from the ``child_datastore``, and de-serializes
 		it on the way out.
 		
-		Args:
-			key: Key naming the object to retrieve
-		
-		Returns:
-			object or None
+		Arguments
+		---------
+		key
+			Key naming the object to retrieve
 		"""
 		value = await (await self.child_datastore.get(key)).collect()  #FIXME
 		return util.stream.receive_channel_from(self.serializer.loads(value))
@@ -124,12 +109,16 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 	
 	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
+		
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
 		
-		Args:
-			key: Key naming `value`
-			value: the object to store.
+		Arguments
+		---------
+		key
+			Key naming `value`
+		value
+			The object to store.
 		"""
 		value_items = await util.stream.receive_channel_from(value).collect()  #FIXME
 		value_bytes = self.serializer.dumps(value_items)
@@ -143,11 +132,10 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		iteration over results does not finish (subject to order generator
 		constraint).
 		
-		Args:
-			query: Query object describing the objects to return.
-		
-		Raturns:
-			iterable cursor with all objects matching criteria
+		Arguments
+		---------
+		query
+			Query object describing the objects to return.
 		"""
 
 		# run the query on the child datastore

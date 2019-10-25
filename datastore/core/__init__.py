@@ -22,24 +22,13 @@ from .binarystore import DictDatastore as BinaryDictDatastore
 from .objectstore import NullDatastore as ObjectNullDatastore
 from .objectstore import DictDatastore as ObjectDictDatastore
 
-from .binarystore import DatastoreAdapter as BinaryDatastoreAdapter
-from .objectstore import DatastoreAdapter as ObjectatastoreAdapter
-
-#from .basic import LoggingAdapter
-#from .basic import KeyTransformAdapter
-#from .basic import LowercaseKeyAdapter
-#from .basic import NamespaceAdapter
-#from .basic import NestedPathAdapter
-#from .basic import DirectoryTreeAdaoter
-#from .basic import DatastoreDirectoryMixin
-#
-#from .basic import DatastoreCollectionMixin
-#from .basic import ShardedAdapter
-#from .basic import TieredAdapter
-
 # import query
 from .query import Query
 from .query import Cursor
 
 # import serialize
 from .serialize import SerializerAdapter
+
+# import util.stream
+from .util.stream import receive_channel_from
+from .util.stream import receive_stream_from
