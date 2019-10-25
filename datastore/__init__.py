@@ -4,3 +4,5 @@ __email__ = 'juan@benet.ai'
 
 from .core import *
 from .filesystem import *
+
+from . import abc
