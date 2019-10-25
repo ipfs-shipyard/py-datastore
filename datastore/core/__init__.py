@@ -16,16 +16,14 @@ from .key import Key
 from .key import Namespace
 
 # import binarystore, objectstore
-from .binarystore import Datastore     as BinaryDatastore
 from .binarystore import NullDatastore as BinaryNullDatastore
 from .binarystore import DictDatastore as BinaryDictDatastore
 
-from .objectstore import Datastore     as ObjectDatastore
 from .objectstore import NullDatastore as ObjectNullDatastore
 from .objectstore import DictDatastore as ObjectDictDatastore
 
-from .binarystore import Adapter as BinaryAdapter
-from .objectstore import Adapter as ObjectAdapter
+from .binarystore import DatastoreAdapter as BinaryDatastoreAdapter
+from .objectstore import DatastoreAdapter as ObjectatastoreAdapter
 
 #from .basic import LoggingAdapter
 #from .basic import KeyTransformAdapter

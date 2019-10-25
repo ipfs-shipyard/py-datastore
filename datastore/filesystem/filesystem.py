@@ -1,8 +1,8 @@
 import os
-from datastore import Datastore
+from datastore.abc import BinaryDatastore
 
 
-class FileSystemDatastore(Datastore):
+class FileSystemDatastore(BinaryDatastore):
 	"""Simple flat-file datastore.
 
 	FileSystemDatastore will store objects in independent files in the host's
