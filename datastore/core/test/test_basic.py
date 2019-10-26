@@ -1,6 +1,8 @@
 import unittest
 import logging
 
+import pytest
+
 from datastore.core.basic import DictDatastore
 from datastore.core.key import Key
 from datastore.core.query import Query
@@ -14,21 +16,21 @@ class TestDatastore(unittest.TestCase):
 	def check_length(self, len):
 		try:
 			for sn in self.stores:
-				self.assertEqual(len(sn), len)
+				assert len(sn) == len
 		except TypeError:
 			pass
 
 	def subtest_remove_nonexistent(self):
-		self.assertTrue(len(self.stores) > 0)
+		assert len(self.stores) > 0
 		self.check_length(0)
 
 		# ensure removing non-existent keys is ok.
 		for value in range(0, self.numelems):
 			key = self.pkey.child(value)
 			for sn in self.stores:
-				self.assertFalse(sn.contains(key))
+				assert not sn.contains(key)
 				sn.delete(key)
-				self.assertFalse(sn.contains(key))
+				assert not sn.contains(key)
 
 		self.check_length(0)
 
@@ -37,10 +39,10 @@ class TestDatastore(unittest.TestCase):
 		for value in range(0, self.numelems):
 			key = self.pkey.child(value)
 			for sn in self.stores:
-				self.assertFalse(sn.contains(key))
+				assert not sn.contains(key)
 				sn.put(key, value)
-				self.assertTrue(sn.contains(key))
-				self.assertEqual(sn.get(key), value)
+				assert sn.contains(key)
+				assert sn.get(key) == value
 
 		# reassure they're all there.
 		self.check_length(self.numelems)
@@ -48,8 +50,8 @@ class TestDatastore(unittest.TestCase):
 		for value in range(0, self.numelems):
 			key = self.pkey.child(value)
 			for sn in self.stores:
-				self.assertTrue(sn.contains(key))
-				self.assertEqual(sn.get(key), value)
+				assert sn.contains(key)
+				assert sn.get(key) == value
 
 		self.check_length(self.numelems)
 
@@ -65,13 +67,13 @@ class TestDatastore(unittest.TestCase):
 				result = list(resultset)
 
 				# make sure everything is there.
-				self.assertTrue(len(contents) == len(allitems), \
-				                '%s == %s' % (str(contents), str(allitems)))
-				self.assertTrue(all([val in contents for val in allitems]))
+				assert len(contents) == len(allitems), \
+				                '%s == %s' % (str(contents), str(allitems))
+				assert all([val in contents for val in allitems])
 
-				self.assertTrue(len(result) == len(expected), \
-				                '%s == %s' % (str(result), str(expected)))
-				self.assertTrue(all([val in result for val in expected]))
+				assert len(result) == len(expected), \
+				                '%s == %s' % (str(result), str(expected))
+				assert all([val in result for val in expected])
 
 				# TODO: should order be preserved?
 				# self.assertEqual(result, expected)
@@ -103,11 +105,11 @@ class TestDatastore(unittest.TestCase):
 		for value in range(0, self.numelems):
 			key = self.pkey.child(value)
 			for sn in self.stores:
-				self.assertTrue(sn.contains(key))
+				assert sn.contains(key)
 				sn.put(key, value + 1)
-				self.assertTrue(sn.contains(key))
-				self.assertNotEqual(value, sn.get(key))
-				self.assertEqual(value + 1, sn.get(key))
+				assert sn.contains(key)
+				assert value != sn.get(key)
+				assert value + 1 == sn.get(key)
 
 		self.check_length(self.numelems)
 
@@ -116,9 +118,9 @@ class TestDatastore(unittest.TestCase):
 		for value in range(0, self.numelems):
 			key = self.pkey.child(value)
 			for sn in self.stores:
-				self.assertTrue(sn.contains(key))
+				assert sn.contains(key)
 				sn.delete(key)
-				self.assertFalse(sn.contains(key))
+				assert not sn.contains(key)
 
 		self.check_length(0)
 
@@ -143,11 +145,11 @@ class TestNullDatastore(unittest.TestCase):
 		for c in range(1, 20):
 			c = str(c)
 			k = Key(c)
-			self.assertFalse(s.contains(k))
-			self.assertEqual(s.get(k), None)
+			assert not s.contains(k)
+			assert s.get(k) == None
 			s.put(k, c)
-			self.assertFalse(s.contains(k))
-			self.assertEqual(s.get(k), None)
+			assert not s.contains(k)
+			assert s.get(k) == None
 
 		for item in s.query(Query(Key('/'))):
 			raise Exception('Should not have found anything.')
@@ -230,34 +232,34 @@ class TestKeyTransformDatastore(TestDatastore):
 
 		k1 = Key('/a/b/c')
 		k2 = Key('/c/b/a')
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(kt.contains(k1))
-		self.assertFalse(kt.contains(k2))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert not kt.contains(k1)
+		assert not kt.contains(k2)
 
 		ds.put(k1, 'abc')
-		self.assertEqual(ds.get(k1), 'abc')
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(kt.contains(k1))
-		self.assertEqual(kt.get(k2), 'abc')
+		assert ds.get(k1) == 'abc'
+		assert not ds.contains(k2)
+		assert not kt.contains(k1)
+		assert kt.get(k2) == 'abc'
 
 		kt.put(k1, 'abc')
-		self.assertEqual(ds.get(k1), 'abc')
-		self.assertEqual(ds.get(k2), 'abc')
-		self.assertEqual(kt.get(k1), 'abc')
-		self.assertEqual(kt.get(k2), 'abc')
+		assert ds.get(k1) == 'abc'
+		assert ds.get(k2) == 'abc'
+		assert kt.get(k1) == 'abc'
+		assert kt.get(k2) == 'abc'
 
 		ds.delete(k1)
-		self.assertFalse(ds.contains(k1))
-		self.assertEqual(ds.get(k2), 'abc')
-		self.assertEqual(kt.get(k1), 'abc')
-		self.assertFalse(kt.contains(k2))
+		assert not ds.contains(k1)
+		assert ds.get(k2) == 'abc'
+		assert kt.get(k1) == 'abc'
+		assert not kt.contains(k2)
 
 		kt.delete(k1)
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(kt.contains(k1))
-		self.assertFalse(kt.contains(k2))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert not kt.contains(k1)
+		assert not kt.contains(k2)
 
 	def test_lowercase_transform(self):
 		from datastore.core.basic import KeyTransformDatastore
@@ -275,19 +277,19 @@ class TestKeyTransformDatastore(TestDatastore):
 		ds.put(k1, 'world')
 		ds.put(k2, 'WORLD')
 
-		self.assertEqual(ds.get(k1), 'world')
-		self.assertEqual(ds.get(k2), 'WORLD')
-		self.assertFalse(ds.contains(k3))
+		assert ds.get(k1) == 'world'
+		assert ds.get(k2) == 'WORLD'
+		assert not ds.contains(k3)
 
-		self.assertEqual(lds.get(k1), 'world')
-		self.assertEqual(lds.get(k2), 'world')
-		self.assertEqual(lds.get(k3), 'world')
+		assert lds.get(k1) == 'world'
+		assert lds.get(k2) == 'world'
+		assert lds.get(k3) == 'world'
 
 		def test(key, val):
 			lds.put(key, val)
-			self.assertEqual(lds.get(k1), val)
-			self.assertEqual(lds.get(k2), val)
-			self.assertEqual(lds.get(k3), val)
+			assert lds.get(k1) == val
+			assert lds.get(k2) == val
+			assert lds.get(k3) == val
 
 		test(k1, 'a')
 		test(k2, 'b')
@@ -319,19 +321,19 @@ class TestLowercaseKeyDatastore(TestDatastore):
 		ds.put(k1, 'world')
 		ds.put(k2, 'WORLD')
 
-		self.assertEqual(ds.get(k1), 'world')
-		self.assertEqual(ds.get(k2), 'WORLD')
-		self.assertFalse(ds.contains(k3))
+		assert ds.get(k1) == 'world'
+		assert ds.get(k2) == 'WORLD'
+		assert not ds.contains(k3)
 
-		self.assertEqual(lds.get(k1), 'world')
-		self.assertEqual(lds.get(k2), 'world')
-		self.assertEqual(lds.get(k3), 'world')
+		assert lds.get(k1) == 'world'
+		assert lds.get(k2) == 'world'
+		assert lds.get(k3) == 'world'
 
 		def test(key, val):
 			lds.put(key, val)
-			self.assertEqual(lds.get(k1), val)
-			self.assertEqual(lds.get(k2), val)
-			self.assertEqual(lds.get(k3), val)
+			assert lds.get(k1) == val
+			assert lds.get(k2) == val
+			assert lds.get(k3) == val
 
 		test(k1, 'a')
 		test(k2, 'b')
@@ -363,20 +365,20 @@ class TestNamespaceDatastore(TestDatastore):
 		ds.put(k1, 'cd')
 		ds.put(k3, 'abcd')
 
-		self.assertEqual(ds.get(k1), 'cd')
-		self.assertFalse(ds.contains(k2))
-		self.assertEqual(ds.get(k3), 'abcd')
+		assert ds.get(k1) == 'cd'
+		assert not ds.contains(k2)
+		assert ds.get(k3) == 'abcd'
 
-		self.assertEqual(nd.get(k1), 'abcd')
-		self.assertFalse(nd.contains(k2))
-		self.assertFalse(nd.contains(k3))
+		assert nd.get(k1) == 'abcd'
+		assert not nd.contains(k2)
+		assert not nd.contains(k3)
 
 		def test(key, val):
 			nd.put(key, val)
-			self.assertEqual(nd.get(key), val)
-			self.assertFalse(ds.contains(key))
-			self.assertFalse(nd.contains(k2.child(key)))
-			self.assertEqual(ds.get(k2.child(key)), val)
+			assert nd.get(key) == val
+			assert not ds.contains(key)
+			assert not nd.contains(k2.child(key))
+			assert ds.get(k2.child(key)) == val
 
 		for i in range(0, 10):
 			test(Key(str(i)), 'val%d' % i)
@@ -402,7 +404,7 @@ class TestNestedPathDatastore(TestDatastore):
 
 		def test(depth, length, expected):
 			nested = nested_path('abcdefghijk', depth, length)
-			self.assertEqual(nested, expected)
+			assert nested == expected
 
 		test(3, 2, 'ab/cd/ef')
 		test(4, 2, 'ab/cd/ef/gh')
@@ -421,77 +423,77 @@ class TestNestedPathDatastore(TestDatastore):
 		ds = DictDatastore()
 		np = NestedPathDatastore(ds, **kwargs)
 
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(ds.contains(k3))
-		self.assertFalse(ds.contains(k4))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert not ds.contains(k3)
+		assert not ds.contains(k4)
 
-		self.assertFalse(np.contains(k1))
-		self.assertFalse(np.contains(k2))
-		self.assertFalse(np.contains(k3))
-		self.assertFalse(np.contains(k4))
+		assert not np.contains(k1)
+		assert not np.contains(k2)
+		assert not np.contains(k3)
+		assert not np.contains(k4)
 
 		np.put(k1, k1)
 		np.put(k2, k2)
 
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertTrue(ds.contains(k3))
-		self.assertTrue(ds.contains(k4))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert ds.contains(k3)
+		assert ds.contains(k4)
 
-		self.assertTrue(np.contains(k1))
-		self.assertTrue(np.contains(k2))
-		self.assertFalse(np.contains(k3))
-		self.assertFalse(np.contains(k4))
+		assert np.contains(k1)
+		assert np.contains(k2)
+		assert not np.contains(k3)
+		assert not np.contains(k4)
 
-		self.assertEqual(np.get(k1), k1)
-		self.assertEqual(np.get(k2), k2)
-		self.assertEqual(ds.get(k3), k1)
-		self.assertEqual(ds.get(k4), k2)
+		assert np.get(k1) == k1
+		assert np.get(k2) == k2
+		assert ds.get(k3) == k1
+		assert ds.get(k4) == k2
 
 		np.delete(k1)
 		np.delete(k2)
 
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(ds.contains(k3))
-		self.assertFalse(ds.contains(k4))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert not ds.contains(k3)
+		assert not ds.contains(k4)
 
-		self.assertFalse(np.contains(k1))
-		self.assertFalse(np.contains(k2))
-		self.assertFalse(np.contains(k3))
-		self.assertFalse(np.contains(k4))
+		assert not np.contains(k1)
+		assert not np.contains(k2)
+		assert not np.contains(k3)
+		assert not np.contains(k4)
 
 		ds.put(k3, k1)
 		ds.put(k4, k2)
 
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertTrue(ds.contains(k3))
-		self.assertTrue(ds.contains(k4))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert ds.contains(k3)
+		assert ds.contains(k4)
 
-		self.assertTrue(np.contains(k1))
-		self.assertTrue(np.contains(k2))
-		self.assertFalse(np.contains(k3))
-		self.assertFalse(np.contains(k4))
+		assert np.contains(k1)
+		assert np.contains(k2)
+		assert not np.contains(k3)
+		assert not np.contains(k4)
 
-		self.assertEqual(np.get(k1), k1)
-		self.assertEqual(np.get(k2), k2)
-		self.assertEqual(ds.get(k3), k1)
-		self.assertEqual(ds.get(k4), k2)
+		assert np.get(k1) == k1
+		assert np.get(k2) == k2
+		assert ds.get(k3) == k1
+		assert ds.get(k4) == k2
 
 		ds.delete(k3)
 		ds.delete(k4)
 
-		self.assertFalse(ds.contains(k1))
-		self.assertFalse(ds.contains(k2))
-		self.assertFalse(ds.contains(k3))
-		self.assertFalse(ds.contains(k4))
+		assert not ds.contains(k1)
+		assert not ds.contains(k2)
+		assert not ds.contains(k3)
+		assert not ds.contains(k4)
 
-		self.assertFalse(np.contains(k1))
-		self.assertFalse(np.contains(k2))
-		self.assertFalse(np.contains(k3))
-		self.assertFalse(np.contains(k4))
+		assert not np.contains(k1)
+		assert not np.contains(k2)
+		assert not np.contains(k3)
+		assert not np.contains(k4)
 
 	def test_3_2(self):
 		opts = {}
@@ -551,34 +553,34 @@ class TestSymlinkDatastore(TestDatastore):
 		b = Key('/B')
 
 		sds.put(a, 1)
-		self.assertEqual(sds.get(a), 1)
-		self.assertEqual(sds.get(b), None)
-		self.assertNotEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 1
+		assert sds.get(b) == None
+		assert sds.get(b) != sds.get(a)
 
 		sds.link(a, b)
-		self.assertEqual(sds.get(a), 1)
-		self.assertEqual(sds.get(b), 1)
-		self.assertEqual(sds.get(a), sds.get(b))
+		assert sds.get(a) == 1
+		assert sds.get(b) == 1
+		assert sds.get(a) == sds.get(b)
 
 		sds.put(b, 2)
-		self.assertEqual(sds.get(a), 2)
-		self.assertEqual(sds.get(b), 2)
-		self.assertEqual(sds.get(a), sds.get(b))
+		assert sds.get(a) == 2
+		assert sds.get(b) == 2
+		assert sds.get(a) == sds.get(b)
 
 		sds.delete(a)
-		self.assertEqual(sds.get(a), None)
-		self.assertEqual(sds.get(b), None)
-		self.assertEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == None
+		assert sds.get(b) == None
+		assert sds.get(b) == sds.get(a)
 
 		sds.put(a, 3)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), 3)
-		self.assertEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 3
+		assert sds.get(b) == 3
+		assert sds.get(b) == sds.get(a)
 
 		sds.delete(b)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), None)
-		self.assertNotEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 3
+		assert sds.get(b) == None
+		assert sds.get(b) != sds.get(a)
 
 	def test_symlink_internals(self):
 		from datastore.core.basic import SymlinkDatastore
@@ -601,132 +603,133 @@ class TestSymlinkDatastore(TestDatastore):
 		dds_query = lambda: list(dds.query(Query(Key('/'))))
 
 		# ensure _link_value_for_key and _link_for_value work
-		self.assertEqual(lva, str(a.child(sds.sentinel)))
-		self.assertEqual(a, sds._link_for_value(lva))
+		assert lva == str(a.child(sds.sentinel))
+		assert a == sds._link_for_value(lva)
 
 		# adding a value should work like usual
 		sds.put(a, 1)
-		self.assertEqual(sds.get(a), 1)
-		self.assertEqual(sds.get(b), None)
-		self.assertNotEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 1
+		assert sds.get(b) == None
+		assert sds.get(b) != sds.get(a)
 
-		self.assertEqual(dds.get(a), 1)
-		self.assertEqual(dds.get(b), None)
+		assert dds.get(a) == 1
+		assert dds.get(b) == None
 
-		self.assertEqual(sds_query(), [1])
-		self.assertEqual(dds_query(), [1])
+		assert sds_query() == [1]
+		assert dds_query() == [1]
 
 		# _follow_link(sds._link_value_for_key(a)) should == get(a)
-		self.assertEqual(sds._follow_link(lva), 1)
-		self.assertEqual(list(sds._follow_link_gen([lva])), [1])
+		assert sds._follow_link(lva) == 1
+		assert list(sds._follow_link_gen([lva])) == [1]
 
 		# linking keys should work
 		sds.link(a, b)
-		self.assertEqual(sds.get(a), 1)
-		self.assertEqual(sds.get(b), 1)
-		self.assertEqual(sds.get(a), sds.get(b))
+		assert sds.get(a) == 1
+		assert sds.get(b) == 1
+		assert sds.get(a) == sds.get(b)
 
-		self.assertEqual(dds.get(a), 1)
-		self.assertEqual(dds.get(b), lva)
+		assert dds.get(a) == 1
+		assert dds.get(b) == lva
 
-		self.assertEqual(sds_query(), [1, 1])
-		self.assertEqual(dds_query(), [lva, 1])
+		assert sds_query() == [1, 1]
+		assert dds_query() == [lva, 1]
 
 		# changing link should affect source
 		sds.put(b, 2)
-		self.assertEqual(sds.get(a), 2)
-		self.assertEqual(sds.get(b), 2)
-		self.assertEqual(sds.get(a), sds.get(b))
+		assert sds.get(a) == 2
+		assert sds.get(b) == 2
+		assert sds.get(a) == sds.get(b)
 
-		self.assertEqual(dds.get(a), 2)
-		self.assertEqual(dds.get(b), lva)
+		assert dds.get(a) == 2
+		assert dds.get(b) == lva
 
-		self.assertEqual(sds_query(), [2, 2])
-		self.assertEqual(dds_query(), [lva, 2])
+		assert sds_query() == [2, 2]
+		assert dds_query() == [lva, 2]
 
 		# deleting source should affect link
 		sds.delete(a)
-		self.assertEqual(sds.get(a), None)
-		self.assertEqual(sds.get(b), None)
-		self.assertEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == None
+		assert sds.get(b) == None
+		assert sds.get(b) == sds.get(a)
 
-		self.assertEqual(dds.get(a), None)
-		self.assertEqual(dds.get(b), lva)
+		assert dds.get(a) == None
+		assert dds.get(b) == lva
 
-		self.assertEqual(sds_query(), [None])
-		self.assertEqual(dds_query(), [lva])
+		assert sds_query() == [None]
+		assert dds_query() == [lva]
 
 		# putting back source should yield working link
 		sds.put(a, 3)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), 3)
-		self.assertEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 3
+		assert sds.get(b) == 3
+		assert sds.get(b) == sds.get(a)
 
-		self.assertEqual(dds.get(a), 3)
-		self.assertEqual(dds.get(b), lva)
+		assert dds.get(a) == 3
+		assert dds.get(b) == lva
 
-		self.assertEqual(sds_query(), [3, 3])
-		self.assertEqual(dds_query(), [lva, 3])
+		assert sds_query() == [3, 3]
+		assert dds_query() == [lva, 3]
 
 		# deleting link should not affect source
 		sds.delete(b)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), None)
-		self.assertNotEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 3
+		assert sds.get(b) == None
+		assert sds.get(b) != sds.get(a)
 
-		self.assertEqual(dds.get(a), 3)
-		self.assertEqual(dds.get(b), None)
+		assert dds.get(a) == 3
+		assert dds.get(b) == None
 
-		self.assertEqual(sds_query(), [3])
-		self.assertEqual(dds_query(), [3])
+		assert sds_query() == [3]
+		assert dds_query() == [3]
 
 		# linking should bring back to normal
 		sds.link(a, b)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), 3)
-		self.assertEqual(sds.get(b), sds.get(a))
+		assert sds.get(a) == 3
+		assert sds.get(b) == 3
+		assert sds.get(b) == sds.get(a)
 
-		self.assertEqual(dds.get(a), 3)
-		self.assertEqual(dds.get(b), lva)
+		assert dds.get(a) == 3
+		assert dds.get(b) == lva
 
-		self.assertEqual(sds_query(), [3, 3])
-		self.assertEqual(dds_query(), [lva, 3])
+		assert sds_query() == [3, 3]
+		assert dds_query() == [lva, 3]
 
 		# Adding another link should not affect things.
 		sds.link(a, c)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), 3)
-		self.assertEqual(sds.get(c), 3)
-		self.assertEqual(sds.get(a), sds.get(b))
-		self.assertEqual(sds.get(a), sds.get(c))
+		assert sds.get(a) == 3
+		assert sds.get(b) == 3
+		assert sds.get(c) == 3
+		assert sds.get(a) == sds.get(b)
+		assert sds.get(a) == sds.get(c)
 
-		self.assertEqual(dds.get(a), 3)
-		self.assertEqual(dds.get(b), lva)
-		self.assertEqual(dds.get(c), lva)
+		assert dds.get(a) == 3
+		assert dds.get(b) == lva
+		assert dds.get(c) == lva
 
-		self.assertEqual(sds_query(), [3, 3, 3])
-		self.assertEqual(dds_query(), [lva, lva, 3])
+		assert sds_query() == [3, 3, 3]
+		assert dds_query() == [lva, lva, 3]
 
 		# linking should be transitive
 		sds.link(b, c)
 		sds.link(c, d)
-		self.assertEqual(sds.get(a), 3)
-		self.assertEqual(sds.get(b), 3)
-		self.assertEqual(sds.get(c), 3)
-		self.assertEqual(sds.get(d), 3)
-		self.assertEqual(sds.get(a), sds.get(b))
-		self.assertEqual(sds.get(a), sds.get(c))
-		self.assertEqual(sds.get(a), sds.get(d))
+		assert sds.get(a) == 3
+		assert sds.get(b) == 3
+		assert sds.get(c) == 3
+		assert sds.get(d) == 3
+		assert sds.get(a) == sds.get(b)
+		assert sds.get(a) == sds.get(c)
+		assert sds.get(a) == sds.get(d)
 
-		self.assertEqual(dds.get(a), 3)
-		self.assertEqual(dds.get(b), lva)
-		self.assertEqual(dds.get(c), lvb)
-		self.assertEqual(dds.get(d), lvc)
+		assert dds.get(a) == 3
+		assert dds.get(b) == lva
+		assert dds.get(c) == lvb
+		assert dds.get(d) == lvc
 
-		self.assertEqual(sds_query(), [3, 3, 3, 3])
-		self.assertEqual(set(dds_query()), set([3, lva, lvb, lvc]))
+		assert sds_query() == [3, 3, 3, 3]
+		assert set(dds_query()) == set([3, lva, lvb, lvc])
 
-		self.assertRaises(AssertionError, sds.link, d, a)
+		with pytest.raises(AssertionError):
+		    sds.link(d, a)
 
 	def test_symlink_recursive(self):
 		from datastore.core.basic import SymlinkDatastore
@@ -739,48 +742,48 @@ class TestSymlinkDatastore(TestDatastore):
 		b = Key('/B')
 
 		sds2.put(a, 1)
-		self.assertEqual(sds2.get(a), 1)
-		self.assertEqual(sds2.get(b), None)
-		self.assertNotEqual(sds2.get(b), sds2.get(a))
+		assert sds2.get(a) == 1
+		assert sds2.get(b) == None
+		assert sds2.get(b) != sds2.get(a)
 
 		sds2.link(a, b)
-		self.assertEqual(sds2.get(a), 1)
-		self.assertEqual(sds2.get(b), 1)
-		self.assertEqual(sds2.get(a), sds2.get(b))
-		self.assertEqual(sds1.get(a), sds1.get(b))
+		assert sds2.get(a) == 1
+		assert sds2.get(b) == 1
+		assert sds2.get(a) == sds2.get(b)
+		assert sds1.get(a) == sds1.get(b)
 
 		sds2.link(a, b)
-		self.assertEqual(sds2.get(a), 1)
-		self.assertEqual(sds2.get(b), 1)
-		self.assertEqual(sds2.get(a), sds2.get(b))
-		self.assertEqual(sds1.get(a), sds1.get(b))
+		assert sds2.get(a) == 1
+		assert sds2.get(b) == 1
+		assert sds2.get(a) == sds2.get(b)
+		assert sds1.get(a) == sds1.get(b)
 
 		sds2.link(a, b)
-		self.assertEqual(sds2.get(a), 1)
-		self.assertEqual(sds2.get(b), 1)
-		self.assertEqual(sds2.get(a), sds2.get(b))
-		self.assertEqual(sds1.get(a), sds1.get(b))
+		assert sds2.get(a) == 1
+		assert sds2.get(b) == 1
+		assert sds2.get(a) == sds2.get(b)
+		assert sds1.get(a) == sds1.get(b)
 
 		sds2.put(b, 2)
-		self.assertEqual(sds2.get(a), 2)
-		self.assertEqual(sds2.get(b), 2)
-		self.assertEqual(sds2.get(a), sds2.get(b))
-		self.assertEqual(sds1.get(a), sds1.get(b))
+		assert sds2.get(a) == 2
+		assert sds2.get(b) == 2
+		assert sds2.get(a) == sds2.get(b)
+		assert sds1.get(a) == sds1.get(b)
 
 		sds2.delete(a)
-		self.assertEqual(sds2.get(a), None)
-		self.assertEqual(sds2.get(b), None)
-		self.assertEqual(sds2.get(b), sds2.get(a))
+		assert sds2.get(a) == None
+		assert sds2.get(b) == None
+		assert sds2.get(b) == sds2.get(a)
 
 		sds2.put(a, 3)
-		self.assertEqual(sds2.get(a), 3)
-		self.assertEqual(sds2.get(b), 3)
-		self.assertEqual(sds2.get(b), sds2.get(a))
+		assert sds2.get(a) == 3
+		assert sds2.get(b) == 3
+		assert sds2.get(b) == sds2.get(a)
 
 		sds2.delete(b)
-		self.assertEqual(sds2.get(a), 3)
-		self.assertEqual(sds2.get(b), None)
-		self.assertNotEqual(sds2.get(b), sds2.get(a))
+		assert sds2.get(a) == 3
+		assert sds2.get(b) == None
+		assert sds2.get(b) != sds2.get(a)
 
 
 class TestDirectoryDatastore(TestDatastore):
@@ -800,17 +803,17 @@ class TestDirectoryDatastore(TestDatastore):
 		# initialize directory at /foo
 		dir_key = Key('/foo')
 		ds.directory(dir_key)
-		self.assertEqual(ds.get(dir_key), [])
+		assert ds.get(dir_key) == []
 
 		# can add to dir
 		bar_key = Key('/foo/bar')
 		ds.directoryAdd(dir_key, bar_key)
-		self.assertEqual(ds.get(dir_key), [str(bar_key)])
+		assert ds.get(dir_key) == [str(bar_key)]
 
 		# re-init does not wipe out directory at /foo
 		dir_key = Key('/foo')
 		ds.directory(dir_key)
-		self.assertEqual(ds.get(dir_key), [str(bar_key)])
+		assert ds.get(dir_key) == [str(bar_key)]
 
 	def test_directory_simple(self):
 		from datastore.core.basic import DirectoryDatastore
@@ -827,19 +830,19 @@ class TestDirectoryDatastore(TestDatastore):
 		ds.directoryAdd(dir_key, bar_key)
 		ds.directoryAdd(dir_key, baz_key)
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [bar_key, baz_key])
+		assert keys == [bar_key, baz_key]
 
 		# removing directory entries
 		ds.directoryRemove(dir_key, bar_key)
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [baz_key])
+		assert keys == [baz_key]
 
 		ds.directoryRemove(dir_key, baz_key)
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [])
+		assert keys == []
 
 		# generator
-		with self.assertRaises(StopIteration):
+		with pytest.raises(StopIteration):
 			gen = ds.directoryRead(dir_key)
 			gen.next()
 
@@ -863,7 +866,7 @@ class TestDirectoryDatastore(TestDatastore):
 		ds.directoryAdd(dir_key, bar_key)
 
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [bar_key, baz_key])
+		assert keys == [bar_key, baz_key]
 
 	def test_directory_remove(self):
 		from datastore.core.basic import DirectoryDatastore
@@ -880,14 +883,14 @@ class TestDirectoryDatastore(TestDatastore):
 		ds.directoryAdd(dir_key, bar_key)
 		ds.directoryAdd(dir_key, baz_key)
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [bar_key, baz_key])
+		assert keys == [bar_key, baz_key]
 
 		# removing directory entries
 		ds.directoryRemove(dir_key, bar_key)
 		ds.directoryRemove(dir_key, bar_key)
 		ds.directoryRemove(dir_key, bar_key)
 		keys = list(ds.directoryRead(dir_key))
-		self.assertEqual(keys, [baz_key])
+		assert keys == [baz_key]
 
 
 class TestDirectoryTreeDatastore(TestDatastore):
@@ -918,51 +921,51 @@ class TestDatastoreCollection(TestDatastore):
 		s2.put(k2, '2')
 		s3.put(k3, '3')
 
-		self.assertTrue(s1.contains(k1))
-		self.assertFalse(s2.contains(k1))
-		self.assertFalse(s3.contains(k1))
-		self.assertTrue(ts.contains(k1))
+		assert s1.contains(k1)
+		assert not s2.contains(k1)
+		assert not s3.contains(k1)
+		assert ts.contains(k1)
 
-		self.assertEqual(ts.get(k1), '1')
-		self.assertEqual(s1.get(k1), '1')
-		self.assertFalse(s2.contains(k1))
-		self.assertFalse(s3.contains(k1))
+		assert ts.get(k1) == '1'
+		assert s1.get(k1) == '1'
+		assert not s2.contains(k1)
+		assert not s3.contains(k1)
 
-		self.assertFalse(s1.contains(k2))
-		self.assertTrue(s2.contains(k2))
-		self.assertFalse(s3.contains(k2))
-		self.assertTrue(ts.contains(k2))
+		assert not s1.contains(k2)
+		assert s2.contains(k2)
+		assert not s3.contains(k2)
+		assert ts.contains(k2)
 
-		self.assertEqual(s2.get(k2), '2')
-		self.assertFalse(s1.contains(k2))
-		self.assertFalse(s3.contains(k2))
+		assert s2.get(k2) == '2'
+		assert not s1.contains(k2)
+		assert not s3.contains(k2)
 
-		self.assertEqual(ts.get(k2), '2')
-		self.assertEqual(s1.get(k2), '2')
-		self.assertEqual(s2.get(k2), '2')
-		self.assertFalse(s3.contains(k2))
+		assert ts.get(k2) == '2'
+		assert s1.get(k2) == '2'
+		assert s2.get(k2) == '2'
+		assert not s3.contains(k2)
 
-		self.assertFalse(s1.contains(k3))
-		self.assertFalse(s2.contains(k3))
-		self.assertTrue(s3.contains(k3))
-		self.assertTrue(ts.contains(k3))
+		assert not s1.contains(k3)
+		assert not s2.contains(k3)
+		assert s3.contains(k3)
+		assert ts.contains(k3)
 
-		self.assertEqual(s3.get(k3), '3')
-		self.assertFalse(s1.contains(k3))
-		self.assertFalse(s2.contains(k3))
+		assert s3.get(k3) == '3'
+		assert not s1.contains(k3)
+		assert not s2.contains(k3)
 
-		self.assertEqual(ts.get(k3), '3')
-		self.assertEqual(s1.get(k3), '3')
-		self.assertEqual(s2.get(k3), '3')
-		self.assertEqual(s3.get(k3), '3')
+		assert ts.get(k3) == '3'
+		assert s1.get(k3) == '3'
+		assert s2.get(k3) == '3'
+		assert s3.get(k3) == '3'
 
 		ts.delete(k1)
 		ts.delete(k2)
 		ts.delete(k3)
 
-		self.assertFalse(ts.contains(k1))
-		self.assertFalse(ts.contains(k2))
-		self.assertFalse(ts.contains(k3))
+		assert not ts.contains(k1)
+		assert not ts.contains(k2)
+		assert not ts.contains(k3)
 
 		self.subtest_simple([ts])
 
@@ -984,18 +987,18 @@ class TestDatastoreCollection(TestDatastore):
 
 			for s in sharded._stores:
 				if shard and s == shard:
-					self.assertTrue(s.contains(key))
-					self.assertEqual(s.get(key), value)
+					assert s.contains(key)
+					assert s.get(key) == value
 				else:
-					self.assertFalse(s.contains(key))
+					assert not s.contains(key)
 
 			if correct_shard == shard:
-				self.assertTrue(sharded.contains(key))
-				self.assertEqual(sharded.get(key), value)
+				assert sharded.contains(key)
+				assert sharded.get(key) == value
 			else:
-				self.assertFalse(sharded.contains(key))
+				assert not sharded.contains(key)
 
-		self.assertEqual(sumlens(stores), 0)
+		assert sumlens(stores) == 0
 		# test all correct.
 		for value in range(0, numelems):
 			key = Key('/fdasfdfdsafdsafdsa/%d' % value)
@@ -1003,7 +1006,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded)
 			shard.put(key, value)
 			checkFor(key, value, sharded, shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# ensure its in the same spots.
 		for i in range(0, numelems):
@@ -1012,7 +1015,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded, shard)
 			shard.put(key, value)
 			checkFor(key, value, sharded, shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# ensure its in the same spots.
 		for value in range(0, numelems):
@@ -1021,7 +1024,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded, shard)
 			sharded.put(key, value)
 			checkFor(key, value, sharded, shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# ensure its in the same spots.
 		for value in range(0, numelems):
@@ -1033,7 +1036,7 @@ class TestDatastoreCollection(TestDatastore):
 			else:
 				sharded.delete(key)
 			checkFor(key, value, sharded)
-		self.assertEqual(sumlens(stores), 0)
+		assert sumlens(stores) == 0
 
 		# try out adding it to the wrong shards.
 		for value in range(0, numelems):
@@ -1042,7 +1045,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded)
 			incorrect_shard.put(key, value)
 			checkFor(key, value, sharded, incorrect_shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# ensure its in the same spots.
 		for value in range(0, numelems):
@@ -1051,7 +1054,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded, incorrect_shard)
 			incorrect_shard.put(key, value)
 			checkFor(key, value, sharded, incorrect_shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# this wont do anything
 		for value in range(0, numelems):
@@ -1060,7 +1063,7 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded, incorrect_shard)
 			sharded.delete(key)
 			checkFor(key, value, sharded, incorrect_shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# this will place it correctly.
 		for value in range(0, numelems):
@@ -1071,7 +1074,7 @@ class TestDatastoreCollection(TestDatastore):
 			sharded.put(key, value)
 			incorrect_shard.delete(key)
 			checkFor(key, value, sharded, correct_shard)
-		self.assertEqual(sumlens(stores), numelems)
+		assert sumlens(stores) == numelems
 
 		# this will place it correctly.
 		for value in range(0, numelems):
@@ -1080,10 +1083,6 @@ class TestDatastoreCollection(TestDatastore):
 			checkFor(key, value, sharded, correct_shard)
 			sharded.delete(key)
 			checkFor(key, value, sharded)
-		self.assertEqual(sumlens(stores), 0)
+		assert sumlens(stores) == 0
 
 		self.subtest_simple([sharded])
-
-
-if __name__ == '__main__':
-	unittest.main()
