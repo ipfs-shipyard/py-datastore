@@ -1,11 +1,12 @@
+import pickle
 import unittest
+
+import pytest
 
 from datastore.core.key import Key
 from datastore.core.basic import DictDatastore
 from datastore.core.serialize import *
 from datastore.core.test.test_basic import TestDatastore
-
-import pickle
 
 
 def implements_serializer_interface(cls):
@@ -21,26 +22,28 @@ class TestSerialize(TestDatastore):
 		values_json = map(json.dumps, values_raw)
 
 		# test protocol
-		self.assertRaises(NotImplementedError, Serializer.loads, value)
-		self.assertRaises(NotImplementedError, Serializer.dumps, value)
+		with pytest.raises(NotImplementedError):
+		    Serializer.loads(value)
+		with pytest.raises(NotImplementedError):
+		    Serializer.dumps(value)
 
 		# test non serializer
-		self.assertEqual(NonSerializer.loads(value), value)
-		self.assertEqual(NonSerializer.dumps(value), value)
-		self.assertTrue(NonSerializer.loads(value) is value)
-		self.assertTrue(NonSerializer.dumps(value) is value)
+		assert NonSerializer.loads(value) == value
+		assert NonSerializer.dumps(value) == value
+		assert NonSerializer.loads(value) is value
+		assert NonSerializer.dumps(value) is value
 
 		# test generators
 		values_serialized = list(serialized_gen(json, values_raw))
 		values_deserialized = list(deserialized_gen(json, values_serialized))
-		self.assertEqual(values_serialized, values_json)
-		self.assertEqual(values_deserialized, values_raw)
+		assert values_serialized == values_json
+		assert values_deserialized == values_raw
 
 		# test stack
 		stack = Stack([json, MapSerializer])
 		values_serialized = map(stack.dumps, values_raw)
 		values_deserialized = map(stack.loads, values_serialized)
-		self.assertEqual(values_deserialized, values_raw)
+		assert values_deserialized == values_raw
 
 	def subtest_serializer_shim(self, serializer, numelems=100):
 		child = DictDatastore()
@@ -50,37 +53,37 @@ class TestSerialize(TestDatastore):
 
 		values_serial = [serializer.dumps(v) for v in values_raw]
 		values_deserial = [serializer.loads(v) for v in values_serial]
-		self.assertEqual(values_deserial, values_raw)
+		assert values_deserial == values_raw
 
 		for value in values_raw:
 			key = Key(value['value'])
 			value_serialized = serializer.dumps(value)
 
 			# should not be there yet
-			self.assertFalse(shim.contains(key))
-			self.assertEqual(shim.get(key), None)
+			assert not shim.contains(key)
+			assert shim.get(key) == None
 
 			# put (should be there)
 			shim.put(key, value)
-			self.assertTrue(shim.contains(key))
-			self.assertEqual(shim.get(key), value)
+			assert shim.contains(key)
+			assert shim.get(key) == value
 
 			# make sure underlying DictDatastore is storing the serialized value.
-			self.assertEqual(shim.child_datastore.get(key), value_serialized)
+			assert shim.child_datastore.get(key) == value_serialized
 
 			# delete (should not be there)
 			shim.delete(key)
-			self.assertFalse(shim.contains(key))
-			self.assertEqual(shim.get(key), None)
+			assert not shim.contains(key)
+			assert shim.get(key) == None
 
 			# make sure manipulating underlying DictDatastore works equally well.
 			shim.child_datastore.put(key, value_serialized)
-			self.assertTrue(shim.contains(key))
-			self.assertEqual(shim.get(key), value)
+			assert shim.contains(key)
+			assert shim.get(key) == value
 
 			shim.child_datastore.delete(key)
-			self.assertFalse(shim.contains(key))
-			self.assertEqual(shim.get(key), None)
+			assert not shim.contains(key)
+			assert shim.get(key) == None
 
 	def test_serializer_shim(self):
 		self.subtest_serializer_shim(json)
@@ -101,10 +104,10 @@ class TestSerialize(TestDatastore):
 			def dumps(self, foo):
 				return foo
 
-		self.assertTrue(implements_serializer_interface(S))
-		self.assertTrue(implements_serializer_interface(json))
-		self.assertTrue(implements_serializer_interface(pickle))
-		self.assertTrue(implements_serializer_interface(Serializer))
+		assert implements_serializer_interface(S)
+		assert implements_serializer_interface(json)
+		assert implements_serializer_interface(pickle)
+		assert implements_serializer_interface(Serializer)
 
 	def test_interface_check_returns_false_for_invalid_serializers(self):
 		class S1(object):
@@ -126,12 +129,8 @@ class TestSerialize(TestDatastore):
 			loads = 'loads'
 			dumps = 'dumps'
 
-		self.assertFalse(implements_serializer_interface(S1))
-		self.assertFalse(implements_serializer_interface(S2))
-		self.assertFalse(implements_serializer_interface(S3))
-		self.assertFalse(implements_serializer_interface(S4))
-		self.assertFalse(implements_serializer_interface(S5))
-
-
-if __name__ == '__main__':
-	unittest.main()
+		assert not implements_serializer_interface(S1)
+		assert not implements_serializer_interface(S2)
+		assert not implements_serializer_interface(S3)
+		assert not implements_serializer_interface(S4)
+		assert not implements_serializer_interface(S5)

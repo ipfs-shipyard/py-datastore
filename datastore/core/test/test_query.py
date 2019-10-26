@@ -2,6 +2,8 @@ import unittest
 import hashlib
 import time
 
+import pytest
+
 from datastore.core.key import Key
 from datastore.core.query import Filter, Order, Query, Cursor
 
@@ -41,7 +43,7 @@ class TestFilter(unittest.TestCase):
 
 	def assertFilter(self, filter, objects, match):
 		result = [o for o in Filter.filter(filter, objects)]
-		self.assertEqual(result, match)
+		assert result == match
 
 	def test_basic(self):
 		v1, v2, v3 = version_objects()
@@ -53,46 +55,46 @@ class TestFilter(unittest.TestCase):
 
 		fkgtA = Filter('key', '>', '/A')
 
-		self.assertTrue(fkgtA(v1))
-		self.assertTrue(fkgtA(v2))
-		self.assertTrue(fkgtA(v3))
+		assert fkgtA(v1)
+		assert fkgtA(v2)
+		assert fkgtA(v3)
 
-		self.assertTrue(fkgtA.value_passes('/BCDEG'))
-		self.assertTrue(fkgtA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertFalse(fkgtA.value_passes('/6353456346543'))
-		self.assertFalse(fkgtA.value_passes('.'))
-		self.assertTrue(fkgtA.value_passes('afsdafdsa'))
+		assert fkgtA.value_passes('/BCDEG')
+		assert fkgtA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert not fkgtA.value_passes('/6353456346543')
+		assert not fkgtA.value_passes('.')
+		assert fkgtA.value_passes('afsdafdsa')
 
 		self.assertFilter(fkgtA, vs, vs)
 
 		fkltA = Filter('key', '<', '/A')
 
-		self.assertFalse(fkltA(v1))
-		self.assertFalse(fkltA(v2))
-		self.assertFalse(fkltA(v3))
+		assert not fkltA(v1)
+		assert not fkltA(v2)
+		assert not fkltA(v3)
 
-		self.assertFalse(fkltA.value_passes('/BCDEG'))
-		self.assertFalse(fkltA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertTrue(fkltA.value_passes('/6353456346543'))
-		self.assertTrue(fkltA.value_passes('.'))
-		self.assertFalse(fkltA.value_passes('A'))
-		self.assertFalse(fkltA.value_passes('afsdafdsa'))
+		assert not fkltA.value_passes('/BCDEG')
+		assert not fkltA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert fkltA.value_passes('/6353456346543')
+		assert fkltA.value_passes('.')
+		assert not fkltA.value_passes('A')
+		assert not fkltA.value_passes('afsdafdsa')
 
 		self.assertFilter(fkltA, vs, [])
 
 		fkeqA = Filter('key', '=', '/ABCD')
 
-		self.assertTrue(fkeqA(v1))
-		self.assertTrue(fkeqA(v2))
-		self.assertTrue(fkeqA(v3))
+		assert fkeqA(v1)
+		assert fkeqA(v2)
+		assert fkeqA(v3)
 
-		self.assertFalse(fkeqA.value_passes('/BCDEG'))
-		self.assertFalse(fkeqA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertFalse(fkeqA.value_passes('/6353456346543'))
-		self.assertFalse(fkeqA.value_passes('A'))
-		self.assertFalse(fkeqA.value_passes('.'))
-		self.assertFalse(fkeqA.value_passes('afsdafdsa'))
-		self.assertTrue(fkeqA.value_passes('/ABCD'))
+		assert not fkeqA.value_passes('/BCDEG')
+		assert not fkeqA.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert not fkeqA.value_passes('/6353456346543')
+		assert not fkeqA.value_passes('A')
+		assert not fkeqA.value_passes('.')
+		assert not fkeqA.value_passes('afsdafdsa')
+		assert fkeqA.value_passes('/ABCD')
 
 		self.assertFilter(fkeqA, vs, vs)
 		self.assertFilter([fkeqA, fkltA], vs, [])
@@ -100,17 +102,17 @@ class TestFilter(unittest.TestCase):
 
 		fkgtB = Filter('key', '>', '/B')
 
-		self.assertFalse(fkgtB(v1))
-		self.assertFalse(fkgtB(v2))
-		self.assertFalse(fkgtB(v3))
+		assert not fkgtB(v1)
+		assert not fkgtB(v2)
+		assert not fkgtB(v3)
 
-		self.assertFalse(fkgtB.value_passes('/A'))
-		self.assertTrue(fkgtB.value_passes('/BCDEG'))
-		self.assertTrue(fkgtB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertFalse(fkgtB.value_passes('/6353456346543'))
-		self.assertFalse(fkgtB.value_passes('.'))
-		self.assertTrue(fkgtB.value_passes('A'))
-		self.assertTrue(fkgtB.value_passes('afsdafdsa'))
+		assert not fkgtB.value_passes('/A')
+		assert fkgtB.value_passes('/BCDEG')
+		assert fkgtB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert not fkgtB.value_passes('/6353456346543')
+		assert not fkgtB.value_passes('.')
+		assert fkgtB.value_passes('A')
+		assert fkgtB.value_passes('afsdafdsa')
 
 		self.assertFilter(fkgtB, vs, [])
 		self.assertFilter([fkgtB, fkgtA], vs, [])
@@ -118,33 +120,33 @@ class TestFilter(unittest.TestCase):
 
 		fkltB = Filter('key', '<', '/B')
 
-		self.assertTrue(fkltB(v1))
-		self.assertTrue(fkltB(v2))
-		self.assertTrue(fkltB(v3))
+		assert fkltB(v1)
+		assert fkltB(v2)
+		assert fkltB(v3)
 
-		self.assertTrue(fkltB.value_passes('/A'))
-		self.assertFalse(fkltB.value_passes('/BCDEG'))
-		self.assertFalse(fkltB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertTrue(fkltB.value_passes('/6353456346543'))
-		self.assertTrue(fkltB.value_passes('.'))
-		self.assertFalse(fkltB.value_passes('A'))
-		self.assertFalse(fkltB.value_passes('afsdafdsa'))
+		assert fkltB.value_passes('/A')
+		assert not fkltB.value_passes('/BCDEG')
+		assert not fkltB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert fkltB.value_passes('/6353456346543')
+		assert fkltB.value_passes('.')
+		assert not fkltB.value_passes('A')
+		assert not fkltB.value_passes('afsdafdsa')
 
 		self.assertFilter(fkltB, vs, vs)
 
 		fkgtAB = Filter('key', '>', '/AB')
 
-		self.assertTrue(fkgtAB(v1))
-		self.assertTrue(fkgtAB(v2))
-		self.assertTrue(fkgtAB(v3))
+		assert fkgtAB(v1)
+		assert fkgtAB(v2)
+		assert fkgtAB(v3)
 
-		self.assertFalse(fkgtAB.value_passes('/A'))
-		self.assertTrue(fkgtAB.value_passes('/BCDEG'))
-		self.assertTrue(fkgtAB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf'))
-		self.assertFalse(fkgtAB.value_passes('/6353456346543'))
-		self.assertFalse(fkgtAB.value_passes('.'))
-		self.assertTrue(fkgtAB.value_passes('A'))
-		self.assertTrue(fkgtAB.value_passes('afsdafdsa'))
+		assert not fkgtAB.value_passes('/A')
+		assert fkgtAB.value_passes('/BCDEG')
+		assert fkgtAB.value_passes('/ZCDEFDSA/fdsafdsa/fdsafdsaf')
+		assert not fkgtAB.value_passes('/6353456346543')
+		assert not fkgtAB.value_passes('.')
+		assert fkgtAB.value_passes('A')
+		assert fkgtAB.value_passes('afsdafdsa')
 
 		self.assertFilter(fkgtAB, vs, vs)
 		self.assertFilter([fkgtAB, fkltB], vs, vs)
@@ -154,17 +156,17 @@ class TestFilter(unittest.TestCase):
 		fgtet2 = Filter('committed', '>=', t2)
 		fgtet3 = Filter('committed', '>=', t3)
 
-		self.assertTrue(fgtet1(v1))
-		self.assertTrue(fgtet1(v2))
-		self.assertTrue(fgtet1(v3))
+		assert fgtet1(v1)
+		assert fgtet1(v2)
+		assert fgtet1(v3)
 
-		self.assertFalse(fgtet2(v1))
-		self.assertTrue(fgtet2(v2))
-		self.assertTrue(fgtet2(v3))
+		assert not fgtet2(v1)
+		assert fgtet2(v2)
+		assert fgtet2(v3)
 
-		self.assertFalse(fgtet3(v1))
-		self.assertFalse(fgtet3(v2))
-		self.assertTrue(fgtet3(v3))
+		assert not fgtet3(v1)
+		assert not fgtet3(v2)
+		assert fgtet3(v3)
 
 		self.assertFilter(fgtet1, vs, vs)
 		self.assertFilter(fgtet2, vs, [v2, v3])
@@ -174,17 +176,17 @@ class TestFilter(unittest.TestCase):
 		fltet2 = Filter('committed', '<=', t2)
 		fltet3 = Filter('committed', '<=', t3)
 
-		self.assertTrue(fltet1(v1))
-		self.assertFalse(fltet1(v2))
-		self.assertFalse(fltet1(v3))
+		assert fltet1(v1)
+		assert not fltet1(v2)
+		assert not fltet1(v3)
 
-		self.assertTrue(fltet2(v1))
-		self.assertTrue(fltet2(v2))
-		self.assertFalse(fltet2(v3))
+		assert fltet2(v1)
+		assert fltet2(v2)
+		assert not fltet2(v3)
 
-		self.assertTrue(fltet3(v1))
-		self.assertTrue(fltet3(v2))
-		self.assertTrue(fltet3(v3))
+		assert fltet3(v1)
+		assert fltet3(v2)
+		assert fltet3(v3)
 
 		self.assertFilter(fltet1, vs, [v1])
 		self.assertFilter(fltet2, vs, [v1, v2])
@@ -198,17 +200,17 @@ class TestFilter(unittest.TestCase):
 		feqt2 = Filter('committed', '=', t2)
 		feqt3 = Filter('committed', '=', t3)
 
-		self.assertTrue(feqt1(v1))
-		self.assertFalse(feqt1(v2))
-		self.assertFalse(feqt1(v3))
+		assert feqt1(v1)
+		assert not feqt1(v2)
+		assert not feqt1(v3)
 
-		self.assertFalse(feqt2(v1))
-		self.assertTrue(feqt2(v2))
-		self.assertFalse(feqt2(v3))
+		assert not feqt2(v1)
+		assert feqt2(v2)
+		assert not feqt2(v3)
 
-		self.assertFalse(feqt3(v1))
-		self.assertFalse(feqt3(v2))
-		self.assertTrue(feqt3(v3))
+		assert not feqt3(v1)
+		assert not feqt3(v2)
+		assert feqt3(v3)
 
 		self.assertFilter(feqt1, vs, [v1])
 		self.assertFilter(feqt2, vs, [v2])
@@ -233,35 +235,35 @@ class TestFilter(unittest.TestCase):
 		f3 = Filter('committed', '=', t1)
 		f4 = Filter('committed', '>=', t2)
 
-		self.assertEqual(f1, eval(repr(f1)))
-		self.assertEqual(f2, eval(repr(f2)))
-		self.assertEqual(f3, eval(repr(f3)))
-		self.assertEqual(f4, eval(repr(f4)))
+		assert f1 == eval(repr(f1))
+		assert f2 == eval(repr(f2))
+		assert f3 == eval(repr(f3))
+		assert f4 == eval(repr(f4))
 
-		self.assertEqual(str(f1), 'key > /A')
-		self.assertEqual(str(f2), 'key < /A')
-		self.assertEqual(str(f3), 'committed = %s' % t1)
-		self.assertEqual(str(f4), 'committed >= %s' % t2)
+		assert str(f1) == 'key > /A'
+		assert str(f2) == 'key < /A'
+		assert str(f3) == 'committed = %s' % t1
+		assert str(f4) == 'committed >= %s' % t2
 
-		self.assertEqual(f1, Filter('key', '>', '/A'))
-		self.assertEqual(f2, Filter('key', '<', '/A'))
-		self.assertEqual(f3, Filter('committed', '=', t1))
-		self.assertEqual(f4, Filter('committed', '>=', t2))
+		assert f1 == Filter('key', '>', '/A')
+		assert f2 == Filter('key', '<', '/A')
+		assert f3 == Filter('committed', '=', t1)
+		assert f4 == Filter('committed', '>=', t2)
 
-		self.assertNotEqual(f2, Filter('key', '>', '/A'))
-		self.assertNotEqual(f1, Filter('key', '<', '/A'))
-		self.assertNotEqual(f4, Filter('committed', '=', t1))
-		self.assertNotEqual(f3, Filter('committed', '>=', t2))
+		assert f2 != Filter('key', '>', '/A')
+		assert f1 != Filter('key', '<', '/A')
+		assert f4 != Filter('committed', '=', t1)
+		assert f3 != Filter('committed', '>=', t2)
 
-		self.assertEqual(hash(f1), hash(Filter('key', '>', '/A')))
-		self.assertEqual(hash(f2), hash(Filter('key', '<', '/A')))
-		self.assertEqual(hash(f3), hash(Filter('committed', '=', t1)))
-		self.assertEqual(hash(f4), hash(Filter('committed', '>=', t2)))
+		assert hash(f1) == hash(Filter('key', '>', '/A'))
+		assert hash(f2) == hash(Filter('key', '<', '/A'))
+		assert hash(f3) == hash(Filter('committed', '=', t1))
+		assert hash(f4) == hash(Filter('committed', '>=', t2))
 
-		self.assertNotEqual(hash(f2), hash(Filter('key', '>', '/A')))
-		self.assertNotEqual(hash(f1), hash(Filter('key', '<', '/A')))
-		self.assertNotEqual(hash(f4), hash(Filter('committed', '=', t1)))
-		self.assertNotEqual(hash(f3), hash(Filter('committed', '>=', t2)))
+		assert hash(f2) != hash(Filter('key', '>', '/A'))
+		assert hash(f1) != hash(Filter('key', '<', '/A'))
+		assert hash(f4) != hash(Filter('committed', '=', t1))
+		assert hash(f3) != hash(Filter('committed', '>=', t2))
 
 
 class TestOrder(unittest.TestCase):
@@ -274,70 +276,70 @@ class TestOrder(unittest.TestCase):
 		v1, v2, v3 = version_objects()
 
 		# test  is_ascending
-		self.assertTrue(o1.is_ascending())
-		self.assertTrue(o2.is_ascending())
-		self.assertFalse(o3.is_ascending())
+		assert o1.is_ascending()
+		assert o2.is_ascending()
+		assert not o3.is_ascending()
 
 		# test key_fn
-		self.assertEqual(o1.key_fn(v1), (v1['key']))
-		self.assertEqual(o1.key_fn(v2), (v2['key']))
-		self.assertEqual(o1.key_fn(v3), (v3['key']))
-		self.assertEqual(o1.key_fn(v1), (v2['key']))
-		self.assertEqual(o1.key_fn(v1), (v3['key']))
+		assert o1.key_fn(v1) == (v1['key'])
+		assert o1.key_fn(v2) == (v2['key'])
+		assert o1.key_fn(v3) == (v3['key'])
+		assert o1.key_fn(v1) == (v2['key'])
+		assert o1.key_fn(v1) == (v3['key'])
 
-		self.assertEqual(o2.key_fn(v1), (v1['committed']))
-		self.assertEqual(o2.key_fn(v2), (v2['committed']))
-		self.assertEqual(o2.key_fn(v3), (v3['committed']))
-		self.assertNotEqual(o2.key_fn(v1), (v2['committed']))
-		self.assertNotEqual(o2.key_fn(v1), (v3['committed']))
+		assert o2.key_fn(v1) == (v1['committed'])
+		assert o2.key_fn(v2) == (v2['committed'])
+		assert o2.key_fn(v3) == (v3['committed'])
+		assert o2.key_fn(v1) != (v2['committed'])
+		assert o2.key_fn(v1) != (v3['committed'])
 
-		self.assertEqual(o3.key_fn(v1), (v1['created']))
-		self.assertEqual(o3.key_fn(v2), (v2['created']))
-		self.assertEqual(o3.key_fn(v3), (v3['created']))
-		self.assertNotEqual(o3.key_fn(v1), (v2['created']))
-		self.assertNotEqual(o3.key_fn(v1), (v3['created']))
+		assert o3.key_fn(v1) == (v1['created'])
+		assert o3.key_fn(v2) == (v2['created'])
+		assert o3.key_fn(v3) == (v3['created'])
+		assert o3.key_fn(v1) != (v2['created'])
+		assert o3.key_fn(v1) != (v3['created'])
 
 		# test sorted
-		self.assertEqual(Order.sorted([v3, v2, v1], [o1]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o1, o2]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v1, v3, v2], [o1, o3]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o1, o2, o3]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v1, v3, v2], [o1, o3, o2]), [v3, v2, v1])
+		assert Order.sorted([v3, v2, v1], [o1]) == [v3, v2, v1]
+		assert Order.sorted([v3, v2, v1], [o1, o2]) == [v1, v2, v3]
+		assert Order.sorted([v1, v3, v2], [o1, o3]) == [v3, v2, v1]
+		assert Order.sorted([v3, v2, v1], [o1, o2, o3]) == [v1, v2, v3]
+		assert Order.sorted([v1, v3, v2], [o1, o3, o2]) == [v3, v2, v1]
 
-		self.assertEqual(Order.sorted([v3, v2, v1], [o2]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o2, o1]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o2, o3]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o2, o1, o3]), [v1, v2, v3])
-		self.assertEqual(Order.sorted([v3, v2, v1], [o2, o3, o1]), [v1, v2, v3])
+		assert Order.sorted([v3, v2, v1], [o2]) == [v1, v2, v3]
+		assert Order.sorted([v3, v2, v1], [o2, o1]) == [v1, v2, v3]
+		assert Order.sorted([v3, v2, v1], [o2, o3]) == [v1, v2, v3]
+		assert Order.sorted([v3, v2, v1], [o2, o1, o3]) == [v1, v2, v3]
+		assert Order.sorted([v3, v2, v1], [o2, o3, o1]) == [v1, v2, v3]
 
-		self.assertEqual(Order.sorted([v1, v2, v3], [o3]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v1, v2, v3], [o3, o2]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v1, v2, v3], [o3, o1]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v1, v2, v3], [o3, o2, o1]), [v3, v2, v1])
-		self.assertEqual(Order.sorted([v1, v2, v3], [o3, o1, o2]), [v3, v2, v1])
+		assert Order.sorted([v1, v2, v3], [o3]) == [v3, v2, v1]
+		assert Order.sorted([v1, v2, v3], [o3, o2]) == [v3, v2, v1]
+		assert Order.sorted([v1, v2, v3], [o3, o1]) == [v3, v2, v1]
+		assert Order.sorted([v1, v2, v3], [o3, o2, o1]) == [v3, v2, v1]
+		assert Order.sorted([v1, v2, v3], [o3, o1, o2]) == [v3, v2, v1]
 
 	def test_object(self):
-		self.assertEqual(Order('key'), eval(repr(Order('key'))))
-		self.assertEqual(Order('+committed'), eval(repr(Order('+committed'))))
-		self.assertEqual(Order('-created'), eval(repr(Order('-created'))))
+		assert Order('key') == eval(repr(Order('key')))
+		assert Order('+committed') == eval(repr(Order('+committed')))
+		assert Order('-created') == eval(repr(Order('-created')))
 
-		self.assertEqual(str(Order('key')), '+key')
-		self.assertEqual(str(Order('+committed')), '+committed')
-		self.assertEqual(str(Order('-created')), '-created')
+		assert str(Order('key')) == '+key'
+		assert str(Order('+committed')) == '+committed'
+		assert str(Order('-created')) == '-created'
 
-		self.assertEqual(Order('key'), Order('+key'))
-		self.assertEqual(Order('-key'), Order('-key'))
-		self.assertEqual(Order('+committed'), Order('+committed'))
+		assert Order('key') == Order('+key')
+		assert Order('-key') == Order('-key')
+		assert Order('+committed') == Order('+committed')
 
-		self.assertNotEqual(Order('key'), Order('-key'))
-		self.assertNotEqual(Order('+key'), Order('-key'))
-		self.assertNotEqual(Order('+committed'), Order('+key'))
+		assert Order('key') != Order('-key')
+		assert Order('+key') != Order('-key')
+		assert Order('+committed') != Order('+key')
 
-		self.assertEqual(hash(Order('+key')), hash(Order('+key')))
-		self.assertEqual(hash(Order('-key')), hash(Order('-key')))
-		self.assertNotEqual(hash(Order('+key')), hash(Order('-key')))
-		self.assertEqual(hash(Order('+committed')), hash(Order('+committed')))
-		self.assertNotEqual(hash(Order('+committed')), hash(Order('+key')))
+		assert hash(Order('+key')) == hash(Order('+key'))
+		assert hash(Order('-key')) == hash(Order('-key'))
+		assert hash(Order('+key')) != hash(Order('-key'))
+		assert hash(Order('+committed')) == hash(Order('+committed'))
+		assert hash(Order('+committed')) != hash(Order('+key'))
 
 
 class TestQuery(unittest.TestCase):
@@ -366,48 +368,51 @@ class TestQuery(unittest.TestCase):
 
 		q3d = {'key': '/', 'limit': 1}
 
-		self.assertEqual(q1.dict(), q1d)
-		self.assertEqual(q2.dict(), q2d)
-		self.assertEqual(q3.dict(), q3d)
+		assert q1.dict() == q1d
+		assert q2.dict() == q2d
+		assert q3.dict() == q3d
 
-		self.assertEqual(q1, Query.from_dict(q1d))
-		self.assertEqual(q2, Query.from_dict(q2d))
-		self.assertEqual(q3, Query.from_dict(q3d))
+		assert q1 == Query.from_dict(q1d)
+		assert q2 == Query.from_dict(q2d)
+		assert q3 == Query.from_dict(q3d)
 
-		self.assertEqual(q1, eval(repr(q1)))
-		self.assertEqual(q2, eval(repr(q2)))
-		self.assertEqual(q3, eval(repr(q3)))
+		assert q1 == eval(repr(q1))
+		assert q2 == eval(repr(q2))
+		assert q3 == eval(repr(q3))
 
-		self.assertEqual(q1, q1.copy())
-		self.assertEqual(q2, q2.copy())
-		self.assertEqual(q3, q3.copy())
+		assert q1 == q1.copy()
+		assert q2 == q2.copy()
+		assert q3 == q3.copy()
 
 	def test_cursor(self):
 
 		k = Key('/')
 
-		self.assertRaises(ValueError, Cursor, None, None)
-		self.assertRaises(ValueError, Cursor, Query(Key('/')), None)
-		self.assertRaises(ValueError, Cursor, None, [1])
+		with pytest.raises(ValueError):
+		    Cursor(None, None)
+		with pytest.raises(ValueError):
+		    Cursor(Query(Key('/')), None)
+		with pytest.raises(ValueError):
+		    Cursor(None, [1])
 		c = Cursor(Query(k), [1, 2, 3, 4, 5])  # should not raise
 
-		self.assertEqual(c.skipped, 0)
-		self.assertEqual(c.returned, 0)
-		self.assertEqual(c._iterable, [1, 2, 3, 4, 5])
+		assert c.skipped == 0
+		assert c.returned == 0
+		assert c._iterable == [1, 2, 3, 4, 5]
 
 		c.skipped = 1
 		c.returned = 2
-		self.assertEqual(c.skipped, 1)
-		self.assertEqual(c.returned, 2)
+		assert c.skipped == 1
+		assert c.returned == 2
 
 		c._skipped_inc(None)
 		c._skipped_inc(None)
-		self.assertEqual(c.skipped, 3)
+		assert c.skipped == 3
 
 		c._returned_inc(None)
 		c._returned_inc(None)
 		c._returned_inc(None)
-		self.assertEqual(c.returned, 5)
+		assert c.returned == 5
 
 		self.subtest_cursor(Query(k), [5, 4, 3, 2, 1], [5, 4, 3, 2, 1])
 		self.subtest_cursor(Query(k, limit=3), [5, 4, 3, 2, 1], [5, 4, 3])
@@ -436,12 +441,15 @@ class TestQuery(unittest.TestCase):
 
 	def subtest_cursor(self, query, iterable, expected_results):
 
-		self.assertRaises(ValueError, Cursor, None, None)
-		self.assertRaises(ValueError, Cursor, query, None)
-		self.assertRaises(ValueError, Cursor, None, iterable)
+		with pytest.raises(ValueError):
+		    Cursor(None, None)
+		with pytest.raises(ValueError):
+		    Cursor(query, None)
+		with pytest.raises(ValueError):
+		    Cursor(None, iterable)
 		cursor = Cursor(query, iterable)
-		self.assertEqual(cursor.skipped, 0)
-		self.assertEqual(cursor.returned, 0)
+		assert cursor.skipped == 0
+		assert cursor.returned == 0
 
 		cursor._ensure_modification_is_safe()
 		cursor.apply_filter()
@@ -451,22 +459,24 @@ class TestQuery(unittest.TestCase):
 
 		cursor_results = []
 		for i in cursor:
-			self.assertRaises(AssertionError, cursor._ensure_modification_is_safe)
-			self.assertRaises(AssertionError, cursor.apply_filter)
-			self.assertRaises(AssertionError, cursor.apply_order)
-			self.assertRaises(AssertionError, cursor.apply_offset)
-			self.assertRaises(AssertionError, cursor.apply_limit)
+			with pytest.raises(AssertionError):
+			    cursor._ensure_modification_is_safe()
+			with pytest.raises(AssertionError):
+			    cursor.apply_filter()
+			with pytest.raises(AssertionError):
+			    cursor.apply_order()
+			with pytest.raises(AssertionError):
+			    cursor.apply_offset()
+			with pytest.raises(AssertionError):
+			    cursor.apply_limit()
 			cursor_results.append(i)
 
 		# ensure iteration happens only once.
-		self.assertRaises(RuntimeError, iter, cursor)
+		with pytest.raises(RuntimeError):
+		    iter(cursor)
 
-		self.assertEqual(cursor_results, expected_results)
-		self.assertEqual(cursor.returned, len(expected_results))
-		self.assertEqual(cursor.skipped, query.offset)
+		assert cursor_results == expected_results
+		assert cursor.returned == len(expected_results)
+		assert cursor.skipped == query.offset
 		if query.limit:
-			self.assertTrue(cursor.returned <= query.limit)
-
-
-if __name__ == '__main__':
-	unittest.main()
+			assert cursor.returned <= query.limit
