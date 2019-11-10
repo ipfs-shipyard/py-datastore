@@ -9,7 +9,7 @@ from datastore.core.query import Query
 class TestDatastore(unittest.TestCase):
 	pkey = Key('/dfadasfdsafdas/')
 	stores = []
-	numelems = []
+	numelems = 0
 
 	def check_length(self, len):
 		try:
@@ -77,8 +77,7 @@ class TestDatastore(unittest.TestCase):
 				# self.assertEqual(result, expected)
 
 			except NotImplementedError:
-				print
-				'WARNING: %s does not implement query.' % sn
+				print('WARNING: %s does not implement query.' % sn)
 
 		return resultset
 
