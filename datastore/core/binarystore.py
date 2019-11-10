@@ -143,6 +143,25 @@ class Datastore:
 			return True
 		except KeyError:
 			return False
+	
+	
+	async def get_all(self, key: key_.Key) -> bytes:
+		"""Returns all the data named by `key` at once or raises `KeyError`
+		   otherwise
+		
+		Arguments
+		---------
+		key
+			Key naming the binary data to retrieve
+		
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
+		RuntimeError
+			An internal error occurred
+		"""
+		return await (await self.get(key)).collect()
 
 
 
@@ -195,6 +214,19 @@ class DictDatastore(Datastore):
 			Key naming the object to retrieve.
 		"""
 		return util.stream.receive_stream_from(self._collection(key)[key])
+	
+	
+	async def get_all(self, key: key_.Key) -> bytes:
+		"""Returns the object named by `key` or raises `KeyError`.
+		
+		Retrieves the object from the collection corresponding to ``key.path``.
+		
+		Arguments
+		---------
+		key
+			Key naming the object to retrieve.
+		"""
+		return self._collection(key)[key]
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
