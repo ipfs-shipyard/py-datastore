@@ -1,5 +1,4 @@
 import abc
-import json
 import typing
 
 from . import binarystore
@@ -34,23 +33,6 @@ class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
 		pass
 
 
-class PrettyJSON(Serializer[T_co], typing.Generic[T_co]):
-	"""json wrapper serializer that pretty-prints.
-	Useful for human readable values and versioning.
-	"""
-
-	@classmethod
-	def loads(cls, value: bytes) -> typing.List[T_co]:
-		"""returns json deserialized `value`."""
-		return [json.loads(value)]  # XXX: Broken if more than one object
-
-	@classmethod
-	def dumps(cls, value: typing.List[T_co], indent: int = 1, encoding: str = "utf-8") -> bytes:
-		"""returns json serialized `value` (pretty-printed)."""
-		result = bytearray()
-		for item in value:
-			result += json.dumps(value, sort_keys=True, indent=indent).encode(encoding)
-		return bytes(result)
 
 class SerializerAdapter(objectstore.Datastore[T_co]):
 	"""Represents a Datastore that serializes and deserializes values.

@@ -6,3 +6,5 @@ from .core.objectstore import Adapter as ObjectAdapter
 
 from .core.util.stream import ReceiveChannel
 from .core.util.stream import ReceiveStream
+
+from .core.serialize import Serializer
