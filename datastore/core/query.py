@@ -420,7 +420,7 @@ class Query(object):
 		if self.offset_key:
 			d['offset_key'] = str(self.offset_key)
 		if len(self.filters) > 0:
-			d['filter'] = [[f.type, f.op, f.name] for f in self.filters]
+			d['filter'] = [[f.field, f.op, f.value] for f in self.filters]
 		if len(self.orders) > 0:
 			d['order'] = [str(o) for o in self.orders]
 

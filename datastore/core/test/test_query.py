@@ -11,7 +11,7 @@ from datastore.core.query import Filter, Order, Query, Cursor
 def version_objects():
 	sr1 = {}
 	sr1['key'] = '/ABCD'
-	sr1['hash'] = hashlib.sha1('herp').hexdigest()
+	sr1['hash'] = hashlib.sha1(b'herp').hexdigest()
 	sr1['parent'] = '0000000000000000000000000000000000000000'
 	sr1['created'] = time.time_ns()
 	sr1['committed'] = time.time_ns()
@@ -20,8 +20,8 @@ def version_objects():
 
 	sr2 = {}
 	sr2['key'] = '/ABCD'
-	sr2['hash'] = hashlib.sha1('derp').hexdigest()
-	sr2['parent'] = hashlib.sha1('herp').hexdigest()
+	sr2['hash'] = hashlib.sha1(b'derp').hexdigest()
+	sr2['parent'] = hashlib.sha1(b'herp').hexdigest()
 	sr2['created'] = time.time_ns()
 	sr2['committed'] = time.time_ns()
 	sr2['attributes'] = {'str': {'value': 'derp'}}
@@ -29,8 +29,8 @@ def version_objects():
 
 	sr3 = {}
 	sr3['key'] = '/ABCD'
-	sr3['hash'] = hashlib.sha1('lerp').hexdigest()
-	sr3['parent'] = hashlib.sha1('derp').hexdigest()
+	sr3['hash'] = hashlib.sha1(b'lerp').hexdigest()
+	sr3['parent'] = hashlib.sha1(b'derp').hexdigest()
 	sr3['created'] = time.time_ns()
 	sr3['committed'] = time.time_ns()
 	sr3['attributes'] = {'str': {'value': 'lerp'}}
