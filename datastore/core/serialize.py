@@ -10,24 +10,26 @@ class util:  # noqa
 	from .util import stream
 
 
-default_serializer = json
+T_co = typing.TypeVar("T_co", covariant=True)
 
 
 #FIXME: This stuff should support streaming data to the maximum extent possible
 
 
-class Serializer(metaclass=abc.ABCMeta):
+class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
 	"""Serializing protocol. Serialized data must be a string."""
 
-	@classmethod
+	__slots__ = ()
+	
+		
 	@abc.abstractmethod
-	def loads(cls, value):
+	def loads(self, value: bytes) -> typing.List[T_co]:
 		"""returns deserialized `value`."""
 		pass
 
-	@classmethod
+	
 	@abc.abstractmethod
-	def dumps(cls, value):
+	def dumps(self, value: typing.List[T_co]) -> bytes:
 		"""returns serialized `value`."""
 		pass
 
@@ -48,53 +50,22 @@ class NonSerializer(Serializer):
 		return value
 
 
-class PrettyJSON(Serializer):
+class PrettyJSON(Serializer[T_co], typing.Generic[T_co]):
 	"""json wrapper serializer that pretty-prints.
 	Useful for human readable values and versioning.
 	"""
 
 	@classmethod
-	def loads(cls, value):
+	def loads(cls, value: bytes) -> typing.List[T_co]:
 		"""returns json deserialized `value`."""
-		return json.loads(value)
+		return [json.loads(value)]  # XXX: Broken if more than one object
 
 	@classmethod
-	def dumps(cls, value, indent=1):
+	def dumps(cls, value: typing.List[T_co], indent: int = 1, encoding: str = "utf-8") -> bytes:
 		"""returns json serialized `value` (pretty-printed)."""
 		return json.dumps(value, sort_keys=True, indent=indent)
 
-
-class Stack(Serializer, list):
-	"""represents a stack of serializers, applying each serializer in sequence."""
-
-	def loads(self, value):
-		"""Returns deserialized `value`."""
-		for serializer in reversed(self):
-			value = serializer.loads(value)
-		return value
-
-	def dumps(self, value):
-		"""returns serialized `value`."""
-		for serializer in self:
-			value = serializer.dumps(value)
-		return value
-
-
-def deserialized_gen(serializer, iterable):
-	"""Generator that yields deserialized objects from `iterable`."""
-	# TODO: Remove this?
-	for item in iterable:
-		yield serializer.loads(item)
-
-
-def serialized_gen(serializer, iterable):
-	"""Generator that yields serialized objects from `iterable`."""
-	# TODO: Remove this?
-	for item in iterable:
-		yield serializer.dumps(item)
-
-
-class SerializerAdapter(objectstore.Adapter):
+class SerializerAdapter(objectstore.Datastore[T_co]):
 	"""Represents a Datastore that serializes and deserializes values.
 	
 	As data is ``put``, the serializer shim serializes it and ``put``s it into
@@ -110,14 +81,17 @@ class SerializerAdapter(objectstore.Adapter):
 		A serializer object (responds to loads and dumps).
 	"""
 
+	__slots__ = ("serializer", "child_datastore")
+	
+
 	# value serializer
 	# override this with their own custom serializer on a class-wide or per-
 	# instance basis. If you plan to store mostly strings, use NonSerializer.
-	serializer = default_serializer  # type: Serializer
+	serializer: Serializer[T_co]
 	
 	
 	def __init__(self, datastore: binarystore.Datastore,
-	             serializer: typing.Union[Serializer, None] = None):
+	             serializer: Serializer[T_co]):
 		"""Initializes internals and tests the serializer.
 		
 		Arguments
@@ -128,17 +102,13 @@ class SerializerAdapter(objectstore.Adapter):
 			A serializer object (responds to loads and dumps).
 		"""
 		super().__init__(datastore)
-		if serializer:
-			self.serializer = serializer
+		self.child_datastore = datastore
+		self.serializer      = serializer
 
-		# ensure serializer works
-		test = {'value': repr(self)}
-		error_str = 'Serializer error: serialized value does not match original'
-		assert self.serializer.loads(self.serializer.dumps(test)) == test, error_str
 	
-	
-	async def get(self, key):
-		"""Return the object named by key or raise `KeyError` if it does not exist.
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
+		"""Returns the object named by key or raises `KeyError` if it does not exist.
+		
 		Retrieves the value from the ``child_datastore``, and de-serializes
 		it on the way out.
 		
@@ -149,10 +119,10 @@ class SerializerAdapter(objectstore.Adapter):
 			object or None
 		"""
 		value = await (await self.child_datastore.get(key)).collect()  #FIXME
-		return self.serializer.loads(value) if value is not None else None
+		return util.stream.receive_channel_from(self.serializer.loads(value))
 	
 	
-	async def _put(self, key: key.Key, value: util.stream.ReceiveStream) -> None:
+	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
@@ -161,11 +131,12 @@ class SerializerAdapter(objectstore.Adapter):
 			key: Key naming `value`
 			value: the object to store.
 		"""
-		value_bytes = await value.collect()  #FIXME
-		value_bytes = self.serializer.dumps(value_bytes)
+		value_items = await util.stream.receive_channel_from(value).collect()  #FIXME
+		value_bytes = self.serializer.dumps(value_items)
 		await self.child_datastore.put(key, value_bytes)
 
-	async def query(self, query):
+	
+	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
 		De-serializes values on the way out, using a :ref:`deserialized_gen` to
 		avoid incurring the cost of de-serializing all data at once, or ever, if
@@ -186,6 +157,33 @@ class SerializerAdapter(objectstore.Adapter):
 		cursor._iterable = deserialized_gen(self.serializer, cursor._iterable)
 
 		return cursor
+	
+	
+	async def delete(self, key: key_.Key) -> None:
+		"""Remove the object named by `key`.
+		
+		Arguments
+		---------
+		key
+			Key naming `value`
+		value
+			The object to store.
+		"""
+		await self.child_datastore.delete(key)
+	
+	
+	async def contains(self, key: key_.Key) -> bool:
+		"""Returns whether an object named by `key` exists
+		
+		The default implementation pays the cost of a get. Some datastore
+		implementations may optimize this.
+		
+		Arguments
+		---------
+		key
+			Key naming the object to check.
+		"""
+		return await self.child_datastore.contains(key)
 
 
 """
