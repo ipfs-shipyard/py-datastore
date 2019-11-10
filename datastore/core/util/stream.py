@@ -84,6 +84,176 @@ class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 		return result
 
 
+class _TeeingChannelShared(_ChannelSharedBase, typing.Generic[T_co]):
+	__slots__ = ("nursery", "nursery_manager", "channels", "bufsize", "source")
+	
+	nursery:         trio._core._run.Nursery  # No public type for this
+	nursery_manager: trio._core._run.NurseryManager  # No public type for this
+	
+	channels: typing.List[trio.abc.SendChannel[T_co]]
+	
+	bufsize: int
+	source:  typing.Optional[trio.abc.ReceiveChannel[T_co]]
+
+
+class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
+	"""Allows the value retrieved from a single `trio.abc.ReceiveChannel` to be
+	pushed towards several receivers additionally to be received by the caller
+	it is returned to.
+	"""
+	
+	__slots__ = ("_closed", "_shared")
+	
+	_closed: bool
+	_shared: _TeeingChannelShared[T_co]
+	
+	def __init__(self, source: trio.abc.ReceiveChannel[T_co], buffer_size: int = 0, *,
+	             _shared: typing.Optional[_TeeingChannelShared[T_co]] = None):
+		super().__init__()
+		
+		if _shared is not None:
+			self._shared = _shared
+			return
+		
+		self._shared = _TeeingChannelShared() if _shared is None else _shared
+		self._shared.bufsize = buffer_size
+		self._shared.source  = source
+		
+		# Try to copy extra attributes from source channel
+		self.count = getattr(source, "count", None)
+		self.atime = getattr(source, "atime", None)
+		self.mtime = getattr(source, "mtime", None)
+		self.btime = getattr(source, "btime", None)
+		
+		self._closed = False
+		
+		# Create nursery without using a `async with`-statement
+		# (Only works because the `__aenter__`-call does not actually block on anything.)
+		self._shared.channels = []
+		self._shared.nursery_manager = trio.open_nursery()
+		try:
+			self._shared.nursery_manager.__aenter__().__await__().send(None)
+		except StopIteration as exc:
+			self._shared.nursery = exc.args[0]
+		else:
+			raise RuntimeError("Failed to initialize nursery synchronously")
+	
+	
+	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], T], *args) -> T:
+		async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+			send_channel, receive_channel = trio.open_memory_channel(self._shared.bufsize)
+			result = await self._shared.nursery.start(func, receive_channel, *args)
+			self._shared.channels.append(send_channel)
+		return result
+	
+	
+	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], typing.Any], *args) -> None:
+		# Doing this sync is just wrong, but we cannot block in this function…
+		self._shared.lock.acquire_nowait()
+		
+		try:
+			send_channel, receive_channel = trio.open_memory_channel(self._shared.bufsize)
+			self._shared.nursery.start_soon(func, receive_channel, *args)
+			self._shared.channels.append(send_channel)
+		finally:
+			self._shared.lock.release()
+	
+	
+	def clone(self) -> ReceiveChannel[T_co]:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		
+		try:
+			# Cast source value to ignore the possible `None` variant as the
+			# passed source value will be ignored if we provide `_shared`
+			source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
+			
+			return TeeingReceiveChannel(source, _shared=self._shared)
+		except BaseException:
+			raise
+		else:
+			self._shared.refcount += 1
+	
+	
+	async def receive(self) -> T_co:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._shared.source is None:
+			raise trio.EndOfChannel()
+		
+		try:
+			# Pass received value (or EOF) to waiting write tasks
+			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+				try:
+					value = await self._shared.source.receive()
+					for channel in self._shared.channels:
+						await channel.send(value)
+					return value
+				except trio.EndOfChannel:
+					for channel in self._shared.channels:
+						await channel.aclose()
+					self._shared.channels.clear()
+					raise
+		except trio.BrokenResourceError:
+			await self.aclose(_mark_closed=True)
+			raise
+		except trio.EndOfChannel:
+			# Ensure that our slaves have finished before the final value is
+			# returned
+			await self.aclose(_mark_closed=False)
+			raise
+	
+	
+	def receive_nowait(self) -> T_co:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._shared.source is None:
+			raise trio.EndOfChannel()
+		
+		# We implement this as there is no guarantee that *all* of our teeing
+		# channels will accept the received value non-blockingly
+		raise trio.WouldBlock()
+	
+	
+	async def aclose(self, *, _mark_closed=True) -> None:
+		if _mark_closed:
+			self._closed = True
+		
+		if self._shared.source is None:
+			return
+		
+		self._shared.refcount -= 1
+		if self._shared.refcount != 0:
+			return
+		
+		try:
+			try:
+				# Close all remaining teeing streams by sending them a
+				# cancellation error
+				for channel in self._shared.channels:
+					with trio.CancelScope() as cancel_scope:
+						cancel_scope.shield = True
+						await trio.aclose_forcefully(channel)
+				
+				# Close the source stream
+				await self._shared.source.aclose()
+			except BaseException as exc:
+				# Wait for any tasks possibly still active in the nursery
+				#
+				# This must be called in this special `try` way to ensure that
+				# the nursery will be properly closed down even if its contents
+				# cannot be cleaned up anymore. Additionally, this will replace
+				# a `trio.Cancelled` resulting of some other temporarily stored
+				# exception by the actual exception value originally raised.
+				if not await self._shared.nursery_manager.__aexit__(type(exc), exc, exc.__traceback__):
+					raise
+			else:
+				await self._shared.nursery_manager.__aexit__(None, None, None)
+		finally:
+			self._shared.channels.clear()
+			self._shared.source = None
+
+
 
 class _WrapingTrioReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	__slots__ = ("_source",)
@@ -386,6 +556,121 @@ class ReceiveStream(trio.abc.ReceiveStream):
 		return bytes(value)
 
 
+class TeeingReceiveStream(ReceiveStream):
+	"""Allows the value retrieved from a single `trio.abc.ReceiveStream` to be
+	pushed towards several receivers additionally to be received by the caller
+	it is returned to.
+	"""
+	
+	__slots__ = ("_nursery", "_nursery_manager", "_channels", "_bufsize", "_closed", "_source")
+	
+	_nursery:         trio._core._run.Nursery  # No public type for this
+	_nursery_manager: trio._core._run.NurseryManager  # No public type for this
+	
+	_channels: typing.List[trio.abc.SendChannel[bytes]]
+	
+	_bufsize: int
+	_closed:  bool
+	_source:  typing.Optional[trio.abc.ReceiveStream]
+	
+	def __init__(self, source: trio.abc.ReceiveStream, buffer_size: int = 0):
+		super().__init__()
+		
+		self._bufsize = buffer_size
+		self._source  = source
+		self._closed  = False
+		
+		# Try to copy extra attributes from source stream
+		self.size  = getattr(source, "size", None)
+		self.atime = getattr(source, "atime", None)
+		self.mtime = getattr(source, "mtime", None)
+		self.btime = getattr(source, "btime", None)
+		
+		# Create nursery without using a `async with`-statement
+		# (Only works because the `__aenter__`-call does not actually block on anything.)
+		self._channels = []
+		self._nursery_manager = trio.open_nursery()
+		try:
+			self._nursery_manager.__aenter__().__await__().send(None)
+		except StopIteration as exc:
+			self._nursery = exc.args[0]
+		else:
+			raise RuntimeError("Failed to initialize nursery synchronously")
+	
+	
+	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveStream], T], *args) -> T:
+		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
+		result = await self._nursery.start(func, receive_stream_from(receive_channel), *args)
+		self._channels.append(send_channel)
+		return result
+	
+	
+	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveStream], typing.Any], *args) -> None:
+		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
+		self._nursery.start_soon(func, receive_stream_from(receive_channel), *args)
+		self._channels.append(send_channel)
+	
+	
+	async def receive_some(self, max_bytes: typing.Optional[int] = None) -> bytes:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._source is None:
+			return b""
+		
+		try:
+			value = await self._source.receive_some(max_bytes)
+			
+			# Pass received value (or EOF) to waiting write tasks
+			if len(value) > 0:
+				for channel in self._channels:
+					await channel.send(value)
+			else:
+				for channel in self._channels:
+					await channel.aclose()
+				self._channels.clear()
+			
+				# Ensure that our slaves have finished before the final value
+				# is returned
+				await self.aclose(_mark_closed=False)
+			
+			return value
+		except BaseException:
+			await self.aclose()
+			raise
+	
+	
+	async def aclose(self, *, _mark_closed=True) -> None:
+		if _mark_closed:
+			self._closed = True
+		if self._source is None:
+			return
+		
+		try:
+			try:
+				# Close all remaining teeing streams by sending them a
+				# cancellation error
+				for channel in self._channels:
+					with trio.CancelScope() as cancel_scope:
+						cancel_scope.shield = True
+						await trio.aclose_forcefully(channel)
+				
+				# Close the source stream
+				await self._source.aclose()
+			except BaseException as exc:
+				# Wait for any tasks possibly still active in the nursery
+				#
+				# This must be called in this special `try` way to ensure that
+				# the nursery will be properly closed down even if its contents
+				# cannot be cleaned up anymore. Additionally, this will replace
+				# a `trio.Cancelled` resulting of some other temporarily stored
+				# exception by the actual exception value originally raised.
+				if not await self._nursery_manager.__aexit__(type(exc), exc, exc.__traceback__):
+					raise
+			else:
+				await self._nursery_manager.__aexit__(None, None, None)
+		finally:
+			self._channels.clear()
+			self._source = None
 
 
 class _WrapingTrioReceiveStream(ReceiveStream):
