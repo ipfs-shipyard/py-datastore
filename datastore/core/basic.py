@@ -1,82 +1,104 @@
+import abc
+
+import trio
+
 from datastore.core.key import Key
 from datastore.core.query import Cursor
+class util:  # noqa
+	from .util import stream
 
 
-class Datastore(object):
+
+class Datastore:
 	"""A Datastore represents storage for any key-value pair.
 
 	Datastores are general enough to be backed by all kinds of different storage:
 	in-memory caches, databases, a remote datastore, flat files on disk, etc.
-	
+
 	The general idea is to wrap a more complicated storage facility in a simple,
 	uniform interface, keeping the freedom of using the right tools for the job.
 	In particular, a Datastore can aggregate other datastores in interesting ways,
 	like sharded (to distribute load) or tiered access (caches before databases).
-	
+
 	While Datastores should be written general enough to accept all sorts of
 	values, some implementations will undoubtedly have to be specific (e.g. SQL
 	databases where fields should be decomposed into columns), particularly to
 	support queries efficiently.
 	"""
 
-	# Main API. Datastore mplementations MUST implement these methods.
-	
-	def get(self, key):
+	# Main API. Datastore implementations MUST implement these methods.
+
+	@abc.abstractmethod
+	async def get(self, key):
 		"""Return the object named by key or None if it does not exist.
-	
+
 		None takes the role of default value, so no KeyError exception is raised.
-		
+
 		Args:
 		  key: Key naming the object to retrieve
-		
+
 		Returns:
 		  object or None
 		"""
-		raise NotImplementedError
+		pass
 
-	def put(self, key, value):
+	
+	async def put(self, key, value):
 		"""Stores the object `value` named by `key`.
 
 		How to serialize and store objects is up to the underlying datastore.
 		It is recommended to use simple objects (strings, numbers, lists, dicts).
-		
+
 		Args:
 		  key: Key naming `value`
 		  value: the object to store.
 		"""
-		raise NotImplementedError
+		await self._put(key, util.stream.ReceiveStream(value))
+
+
+	@abc.abstractmethod
+	async def _put(self, key, value):
+		"""
+		Like :meth:`put`, but always receives a `datastore.util.ReceiveStream`
+		compatible object, so that your datastore implementation doesn't
+		have to do any conversion
+		"""
+		pass
 	
-	def delete(self, key):
+	@abc.abstractmethod
+	async def delete(self, key):
 		"""Removes the object named by `key`.
 
 		Args:
 		  key: Key naming the object to remove.
 		"""
-		raise NotImplementedError
+		pass
+
 	
-	def query(self, query):
+	@abc.abstractmethod
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria expressed in `query`
-		
+
 		Implementations of query will be the largest differentiating factor
 		amongst datastores. All datastores **must** implement query, even using
 		query's worst case scenario, see :ref:class:`Query` for details.
-		
+
 		Args:
 		  query: Query object describing the objects to return.
-		
+
 		Raturns:
 		  iterable cursor with all objects matching criteria
 		"""
 		raise NotImplementedError
-	
+
 	# Secondary API. Datastores MAY provide optimized implementations.
-	
-	def contains(self, key):
+
+	async def contains(self, key):
 		"""Returns whether the object named by `key` exists.
-		
+
 		The default implementation pays the cost of a get. Some datastore
 		implementations may optimize this.
-		
+
 		Args:
 		  key: Key naming the object to check.
 
@@ -89,19 +111,19 @@ class Datastore(object):
 class NullDatastore(Datastore):
 	"""Stores nothing, but conforms to the API. Useful to test with."""
 
-	def get(self, key):
+	async def get(self, key):
 		"""Return the object named by key or None if it does not exist (None)."""
 		return None
 
-	def put(self, key, value):
+	async def _put(self, key, value):
 		"""Store the object `value` named by `key` (does nothing)."""
 		pass
 
-	def delete(self, key):
+	async def delete(self, key):
 		"""Remove the object named by `key` (does nothing)."""
 		pass
 
-	def query(self, query):
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria in `query` (empty)."""
 		return query([])
 
@@ -111,19 +133,19 @@ class DictDatastore(Datastore):
 
 	def __init__(self):
 		self._items = dict()
-	
+
 	def _collection(self, key):
 		"""Returns the namespace collection for `key`."""
 		collection = str(key.path)
 		if collection not in self._items:
 			self._items[collection] = dict()
 		return self._items[collection]
-	
-	def get(self, key):
+
+	async def get(self, key):
 		"""Return the object named by `key` or None.
-		
+
 		Retrieves the object from the collection corresponding to ``key.path``.
-		
+
 		Args:
 		  key: Key naming the object to retrieve.
 
@@ -131,15 +153,15 @@ class DictDatastore(Datastore):
 		  object or None
 		"""
 		try:
-		return self._collection(key)[key]
+			return self._collection(key)[key]
 		except KeyError:
 			return None
-	
-	def put(self, key, value):
+
+	async def _put(self, key, value):
 		"""Stores the object `value` named by `key`.
-		
+
 		Stores the object in the collection corresponding to ``key.path``.
-		
+
 		Args:
 		  key: Key naming `value`
 		  value: the object to store.
@@ -148,28 +170,28 @@ class DictDatastore(Datastore):
 			self.delete(key)
 		else:
 			self._collection(key)[key] = value
-	
-	def delete(self, key):
+
+	async def delete(self, key):
 		"""Removes the object named by `key`.
-		
+
 		Removes the object from the collection corresponding to ``key.path``.
-		
+
 		Args:
 		  key: Key naming the object to remove.
 		"""
 		try:
-		del self._collection(key)[key]
-		
-		if len(self._collection(key)) == 0:
-			del self._items[str(key.path)]
+			del self._collection(key)[key]
+
+			if len(self._collection(key)) == 0:
+				del self._items[str(key.path)]
 		except KeyError:
 			pass
-	
-	def contains(self, key):
+
+	async def contains(self, key):
 		"""Returns whether the object named by `key` exists.
-		
+
 		Checks for the object in the collection corresponding to ``key.path``.
-		
+
 		Args:
 		  key: Key naming the object to check.
 
@@ -178,8 +200,8 @@ class DictDatastore(Datastore):
 		"""
 
 		return key in self._collection(key)
-	
-	def query(self, query):
+
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria expressed in `query`
 
 		Naively applies the query operations on the objects within the namespaced
@@ -197,7 +219,7 @@ class DictDatastore(Datastore):
 			return query(self._items[str(query.key)].values())
 		else:
 			return query([])
-	
+
 	def __len__(self):
 		return sum(map(len, self._items.values()))
 
@@ -209,7 +231,7 @@ class ShimDatastore(Datastore):
 	data themselves; instead, they delegate storage to an underlying child
 	datastore. The default implementation just passes all calls to the child.
 	"""
-	
+
 	def __init__(self, datastore):
 		"""Initializes this ShimDatastore with child `datastore`."""
 
@@ -218,9 +240,9 @@ class ShimDatastore(Datastore):
 			raise TypeError(errstr % (Datastore, datastore))
 
 		self.child_datastore = datastore
-	
+
 	# default implementation just passes all calls to child
-	def get(self, key):
+	async def get(self, key):
 		"""Return the object named by key or None if it does not exist.
 
 		Default shim implementation simply returns ``child_datastore.get(key)``
@@ -236,25 +258,25 @@ class ShimDatastore(Datastore):
 		Returns:
 		  object or None
 		"""
-		return self.child_datastore.get(key)
-	
-	def put(self, key, value):
+		return await self.child_datastore.get(key)
+
+	async def _put(self, key, value):
 		"""Stores the object `value` named by `key`.
-		
+
 		Default shim implementation simply calls ``child_datastore.put(key, value)``
 		Override to provide different functionality, for example::
-		
+
 			def put(self, key, value):
 			  value = json.dumps(value)
 			  self.child_datastore.put(key, value)
-		
+
 		Args:
 		  key: Key naming `value`.
 		  value: the object to store.
 		"""
-		self.child_datastore.put(key, value)
-	
-	def delete(self, key):
+		await self.child_datastore.put(key, value)
+
+	async def delete(self, key):
 		"""Removes the object named by `key`.
 
 		Default shim implementation simply calls ``child_datastore.delete(key)``
@@ -263,78 +285,78 @@ class ShimDatastore(Datastore):
 		Args:
 		  key: Key naming the object to remove.
 		"""
-		self.child_datastore.delete(key)
-	
-	def query(self, query):
+		await self.child_datastore.delete(key)
+
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria expressed in `query`.
-		
+
 		Default shim implementation simply returns ``child_datastore.query(query)``
 		Override to provide different functionality, for example::
-		
+
 			def query(self, query):
 			  cursor = self.child_datastore.query(query)
 			  cursor._iterable = deserialized(cursor._iterable)
 			  return cursor
-		
+
 		Args:
 		  query: Query object describing the objects to return.
 
 		Raturns:
 		  iterable cursor with all objects matching criteria
 		"""
-		return self.child_datastore.query(query)
+		return await self.child_datastore.query(query)
 
 
 
 class LoggingDatastore(ShimDatastore):
 	"""Wraps a datastore with a logging shim."""
-	
+
 	def __init__(self, child_datastore, logger=None):
 		if not logger:
 			import logging
 			logger = logging
-		
+
 		self.logger = logger
-		
-		super(LoggingDatastore, self).__init__(child_datastore)
-	
-	def get(self, key):
+
+		super().__init__(child_datastore)
+
+	async def get(self, key):
 		"""Return the object named by key or None if it does not exist.
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: get %s' % (self, key))
-		value = super(LoggingDatastore, self).get(key)
+		value = await super().get(key)
 		self.logger.debug('%s: %s' % (self, value))
 		return value
-	
-	def put(self, key, value):
+
+	async def _put(self, key, value):
 		"""Stores the object `value` named by `key`self.
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: put %s' % (self, key))
 		self.logger.debug('%s: %s' % (self, value))
-		super(LoggingDatastore, self).put(key, value)
-	
-	def delete(self, key):
+		await super()._put(key, value)
+
+	async def delete(self, key):
 		"""Removes the object named by `key`.
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: delete %s' % (self, key))
-		super(LoggingDatastore, self).delete(key)
-	
-	def contains(self, key):
+		await super().delete(key)
+
+	async def contains(self, key):
 		"""Returns whether the object named by `key` exists.
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: contains %s' % (self, key))
-		return super(LoggingDatastore, self).contains(key)
-	
-	def query(self, query):
+		return await super().contains(key)
+
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria expressed in `query`.
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: query %s' % (self, query))
-		return super(LoggingDatastore, self).query(query)
+		return await super().query(query)
 
 
 class KeyTransformDatastore(ShimDatastore):
@@ -358,33 +380,33 @@ class KeyTransformDatastore(ShimDatastore):
 		>>> ds.get(datastore.Key('/c/b/a'))
 		None
 	"""
-	
+
 	def __init__(self, *args, **kwargs):
 		"""Initializes KeyTransformDatastore with `keytransform` function."""
 		self.keytransform = kwargs.pop('keytransform', None)
-		super(KeyTransformDatastore, self).__init__(*args, **kwargs)
-	
-	def get(self, key):
+		super().__init__(*args, **kwargs)
+
+	async def get(self, key):
 		"""Return the object named by keytransform(key)."""
-		return self.child_datastore.get(self._transform(key))
-	
-	def put(self, key, value):
+		return await self.child_datastore.get(self._transform(key))
+
+	async def _put(self, key, value):
 		"""Stores the object names by keytransform(key)."""
-		return self.child_datastore.put(self._transform(key), value)
-	
-	def delete(self, key):
+		await self.child_datastore._put(self._transform(key), value)
+
+	async def delete(self, key):
 		"""Removes the object named by keytransform(key)."""
-		return self.child_datastore.delete(self._transform(key))
-	
-	def contains(self, key):
+		await self.child_datastore.delete(self._transform(key))
+
+	async def contains(self, key):
 		"""Returns whether the object named by key is in this datastore."""
-		return self.child_datastore.contains(self._transform(key))
-	
-	def query(self, query):
+		return await self.child_datastore.contains(self._transform(key))
+
+	async def query(self, query):
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		query = query.copy()
 		query.key = self._transform(query.key)
-		return self.child_datastore.query(query)
+		return await self.child_datastore.query(query)
 
 	def _transform(self, key):
 		"""Returns a `key` transformed by `self.keytransform`."""
@@ -416,9 +438,9 @@ class LowercaseKeyDatastore(KeyTransformDatastore):
 
 	def __init__(self, *args, **kwargs):
 		"""Initializes KeyTransformDatastore with keytransform function."""
-		super(LowercaseKeyDatastore, self).__init__(*args, **kwargs)
+		super().__init__(*args, **kwargs)
 		self.keytransform = self.lowercaseKey
-	
+
 	@classmethod
 	def lowercaseKey(cls, key):
 		"""Returns a lowercased `key`."""
@@ -450,10 +472,10 @@ class NamespaceDatastore(KeyTransformDatastore):
 
 	def __init__(self, namespace, *args, **kwargs):
 		"""Initializes NamespaceDatastore with `key` namespace."""
-		super(NamespaceDatastore, self).__init__(*args, **kwargs)
+		super().__init__(*args, **kwargs)
 		self.keytransform = self.namespaceKey
 		self.namespace = Key(namespace)
-	
+
 	def namespaceKey(self, key):
 		"""Returns a namespaced `key`: namespace.child(key)."""
 		return self.namespace.child(key)
@@ -487,8 +509,7 @@ class NestedPathDatastore(KeyTransformDatastore):
 
 	_default_depth = 3
 	_default_length = 2
-	_default_keyfn = lambda key: key.name  # noqa
-	_default_keyfn = staticmethod(_default_keyfn)
+	_default_keyfn = staticmethod(lambda key: key.name)
 
 	def __init__(self, *args, **kwargs):
 		"""Initializes KeyTransformDatastore with keytransform function.
@@ -503,30 +524,30 @@ class NestedPathDatastore(KeyTransformDatastore):
 		self.nest_length = kwargs.pop('length', self._default_length)
 		self.nest_keyfn = kwargs.pop('key_fn', self._default_keyfn)
 
-		super(NestedPathDatastore, self).__init__(*args, **kwargs)
+		super().__init__(*args, **kwargs)
 		self.keytransform = self.nestKey
-	
-	def query(self, query):
+
+	async def query(self, query):
 		# Requires supporting * operator on queries.
-		raise NotImplementedError
-	
+		raise NotImplementedError()
+
 	def nestKey(self, key):
 		"""Returns a nested `key`."""
-		
+
 		nest = self.nest_keyfn(key)
-		
+
 		# if depth * length > len(key.name), we need to pad.
 		mult = 1 + int(self.nest_depth * self.nest_length / len(nest))
 		nest = nest * mult
-		
+
 		pref = Key(self.nestedPath(nest, self.nest_depth, self.nest_length))
 		return pref.child(key)
-	
+
 	@staticmethod
 	def nestedPath(path, depth, length):
 		"""returns a nested version of `basename`, using the starting characters.
-		For example:
-		
+		  For example:
+
 			>>> NestedPathDatastore.nested_path('abcdefghijk', 3, 2)
 			'ab/cd/ef'
 			>>> NestedPathDatastore.nested_path('abcdefghijk', 4, 2)
@@ -571,53 +592,54 @@ class DirectoryDatastore(ShimDatastore):
 		'baz'
 	"""
 
-	def directory(self, dir_key):
+	async def directory(self, dir_key):
 		"""Initializes directory at dir_key."""
-		dir_items = self.get(dir_key)
+		dir_items = await self.get(dir_key)
 		if not isinstance(dir_items, list):
-			self.put(dir_key, [])
-		
-	def directoryRead(self, dir_key):
+			await self._put(dir_key, util.stream.ReceiveStream([]))  #XXX: Or something like this…
+
+	async def directoryRead(self, dir_key):
 		"""Returns a generator that iterates over all keys in the directory
 		referenced by `dir_key`
 
 		Returns None if the directory `dir_key` does not exist
 		"""
-	
+
 		return self.directory_entries_generator(dir_key)
-	
-	def directoryAdd(self, dir_key, key):
+
+	async def directoryAdd(self, dir_key, key):
 		"""Adds directory entry `key` to directory at `dir_key`.
 
 		If the directory `dir_key` does not exist, it is created.
 		"""
 		key = str(key)
-		
-		dir_items = self.get(dir_key) or []
+
+		dir_items = await self.get(dir_key) or []
 		if key not in dir_items:
 			dir_items.append(key)
-			self.put(dir_key, dir_items)
-		
-	def directoryRemove(self, dir_key, key):
+			await self.put(dir_key, dir_items)
+
+	async def directoryRemove(self, dir_key, key):
 		"""Removes directory entry `key` from directory at `dir_key`.
 
 		If either the directory `dir_key` or the directory entry `key` don't exist,
 		this method is a no-op.
 		"""
 		key = str(key)
-		
-		dir_items = self.get(dir_key) or []
+
+		dir_items = await self.get(dir_key) or []
 		if key in dir_items:
 			dir_items = [k for k in dir_items if k != key]
-			self.put(dir_key, dir_items)
+			await self.put(dir_key, dir_items)
 
-	def directory_entries_generator(self, dir_key):
-		dir_items = self.get(dir_key) or []
-		for item in dir_items:
+	async def directory_entries_generator(self, dir_key):
+		dir_items = await self.get(dir_key) or []
+		if dir_items:
+			async for item in dir_items:
 			yield Key(item)
 
 
-class DirectoryTreeDatastore(ShimDatastore):
+class DirectoryTreeDatastore(DirectoryDatastore):
 	"""Datastore that tracks directory entries, like in a filesystem.
 	All key changes cause changes in a collection-like directory.
 
@@ -651,34 +673,32 @@ class DirectoryTreeDatastore(ShimDatastore):
 		>>> rds.get(a)
 		[]
 	"""
-	
-	def put(self, key, value):
+
+	async def _put(self, key, value):
 		"""Stores the object `value` named by `key`self.
 		   DirectoryTreeDatastore stores a directory entry.
 		"""
-		super(DirectoryTreeDatastore, self).put(key, value)
-
-		str_key = str(key)
+		await super()._put(key, value)
 
 		# ignore root
-		if str_key == '/':
+		if key.is_top_level():
 			return
 
-		# retrieve directory, to add entry
+		# Add entry to directory
 		dir_key = key.parent.instance('directory')
-		directory = self.directory(dir_key)
-	
+		directory = await super().directory(dir_key, key)
+
 		# ensure key is in directory
-		if str_key not in directory:
-			directory.append(str_key)
-			super(DirectoryTreeDatastore, self).put(dir_key, directory)
-	
-	def delete(self, key):
+		if key not in directory:
+			directory.append(key)
+			await super()._put(dir_key, directory)
+
+	async def delete(self, key):
 		"""Removes the object named by `key`.
 		   DirectoryTreeDatastore removes the directory entry.
 		"""
-		super(DirectoryTreeDatastore, self).delete(key)
-		
+		await super().delete(key)
+
 		str_key = str(key)
 
 		# ignore root
@@ -687,33 +707,33 @@ class DirectoryTreeDatastore(ShimDatastore):
 
 		# retrieve directory, to remove entry
 		dir_key = key.parent.instance('directory')
-		directory = self.directory(dir_key)
-	
+		directory = await self.directory(dir_key)
+
 		# ensure key is not in directory
 		if directory and str_key in directory:
 			directory.remove(str_key)
 			if len(directory) > 0:
-				super(DirectoryTreeDatastore, self).put(dir_key, directory)
+				await super()._put(dir_key, directory)
 			else:
-				super(DirectoryTreeDatastore, self).delete(dir_key)
-	
-	def query(self, query):
+				await super().delete(dir_key)
+
+	async def query(self, query):
 		"""Returns objects matching criteria expressed in `query`.
 		DirectoryTreeDatastore uses directory entries.
 		"""
-		return query(self.directory_values_generator(query.key))
+		return query([value async for value in self.directory_values_generator(query.key)])
 
-	def directory(self, key):
+	async def directory(self, key):
 		"""Retrieves directory entries for given key."""
 		if key.name != 'directory':
 			key = key.instance('directory')
-		return self.get(key) or []
+		return await self.get(key) or []
 
-	def directory_values_generator(self, key):
+	async def directory_values_generator(self, key):
 		"""Retrieve directory values for given key."""
-		directory = self.directory(key)
+		directory = await self.directory(key)
 		for key in directory:
-			yield self.get(Key(key))
+			yield await self.get(Key(key))
 
 
 class DatastoreCollection(ShimDatastore):
@@ -771,114 +791,132 @@ class TieredDatastore(DatastoreCollection):
 		* query    : queries bottom (most complete) datastore
 	"""
 
-	def get(self, key):
+	async def get(self, key):
 		"""Return the object named by key. Checks each datastore in order."""
 		value = None
 		for store in self._stores:
-			value = store.get(key)
+			value = await store.get(key)
 			if value is not None:
 				break
-		
-		# add model to lower stores only
+
+		# Add model to lower stores only
 		if value is not None:
+			async with trio.open_nursery() as nursery:
 			for store2 in self._stores:
 				if store == store2:
 					break
-				store2.put(key, value)
-		
+					nursery.call_soon(store2.put(key, value))
+
 		return value
+
 	
-	def put(self, key, value):
+	async def _put(self, key, value):
 		"""Stores the object in all underlying datastores."""
-			for store in self._stores:
-			store.put(key, value)
+		async with trio.open_nursery() as nursery:
+		for store in self._stores:
+				nursery.call_soon(store.put(key, value))
+
 	
-	def delete(self, key):
+	async def delete(self, key):
 		"""Removes the object from all underlying datastores."""
-			for store in self._stores:
-			store.delete(key)
+		async def swallow_key_error(coroutine):
+			try:
+				await coroutine
+			except KeyError:
+				pass
+		
+		async with trio.open_nursery() as nursery:
+		for store in self._stores:
+				nursery.call_soon(swallow_key_error(store.delete()))
+
 	
-	def query(self, query):
+	async def query(self, query):
 		"""Returns a sequence of objects matching criteria expressed in `query`.
 		The last datastore will handle all query calls, as it has a (if not
 		the only) complete record of all objects.
 		"""
 		# queries hit the last (most complete) datastore
 		return self._stores[-1].query(query)
+
 	
-	def contains(self, key):
+	async def contains(self, key):
 		"""Returns whether the object is in this datastore."""
 		for store in self._stores:
-			if store.contains(key):
+			if await store.contains(key):
 				return True
 		return False
 
 
 class ShardedDatastore(DatastoreCollection):
 	"""Represents a collection of datastore shards.
-	
+
 	A datastore is selected based on a sharding function.
 	Sharding functions should take a Key and return an integer.
-	
+
 	WARNING: adding or removing datastores while mid-use may severely affect
 	         consistency. Also ensure the order is correct upon initialization.
 	         While this is not as important for caches, it is crucial for
 	         persistent datastores.
 	"""
-	
+
 	def __init__(self, stores=[], shardingfn=hash):
 		"""Initialize the datastore with any provided datastore."""
 		if not callable(shardingfn):
 			raise TypeError('shardingfn (type %s) is not callable' % type(shardingfn))
 
-		super(ShardedDatastore, self).__init__(stores)
+		super().__init__(stores)
 		self._shardingfn = shardingfn
-	
+
 	def shard(self, key):
 		"""Returns the shard index to handle `key`, according to sharding fn."""
 		return self._shardingfn(key) % len(self._stores)
-	
+
 	def shardDatastore(self, key):
 		"""Returns the shard to handle `key`."""
 		return self.datastore(self.shard(key))
+
 	
-	def get(self, key):
+	async def get(self, key):
 		"""Return the object named by key from the corresponding datastore."""
-		return self.shardDatastore(key).get(key)
+		return await self.shardDatastore(key).get(key)
+
 	
-	def put(self, key, value):
+	async def put(self, key, value):
 		"""Stores the object to the corresponding datastore."""
-		self.shardDatastore(key).put(key, value)
+		await self.shardDatastore(key).put(key, value)
+
 	
-	def delete(self, key):
+	async def delete(self, key):
 		"""Removes the object from the corresponding datastore."""
-		self.shardDatastore(key).delete(key)
+		await self.get_sharded_datastore(key).delete(key)
+
 	
-	def contains(self, key):
+	async def contains(self, key):
 		"""Returns whether the object is in this datastore."""
-		return self.shardDatastore(key).contains(key)
+		return await self.shardDatastore(key).contains(key)
+
 	
-	def query(self, query):
+	async def query(self, query):
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		cursor = Cursor(query, self.shard_query_generator(query))
 		cursor.apply_order()  # ordering sharded queries is expensive (no generator)
 		return cursor
-	
+
 	def shard_query_generator(self, query):
 		"""A generator that queries each shard in sequence."""
 		shard_query = query.copy()
-		
+
 		for shard in self._stores:
 			# yield all items matching within this shard
 			cursor = shard.query(shard_query)
 			for item in cursor:
 				yield item
-			
+
 			# update query with results of first query
 			shard_query.offset = max(shard_query.offset - cursor.skipped, 0)
 			if shard_query.limit:
 				shard_query.limit = max(shard_query.limit - cursor.returned, 0)
-				
+
 				if shard_query.limit <= 0:
 					break  # we're already done!
 

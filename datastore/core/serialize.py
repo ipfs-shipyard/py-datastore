@@ -1,21 +1,31 @@
-from abc import ABC, abstractmethod
+import abc
 import json
-from datastore.core.basic import ShimDatastore
+import typing
+
+from . import basic
+from . import key
+from . import query
+class util:  # noqa
+	from .util import stream
+
 
 default_serializer = json
 
 
-class Serializer(ABC):
+#FIXME: This stuff should support streaming data to the maximum extent possible
+
+
+class Serializer(metaclass=abc.ABCMeta):
 	"""Serializing protocol. Serialized data must be a string."""
 
 	@classmethod
-	@abstractmethod
+	@abc.abstractmethod
 	def loads(cls, value):
 		"""returns deserialized `value`."""
 		pass
 
 	@classmethod
-	@abstractmethod
+	@abc.abstractmethod
 	def dumps(cls, value):
 		"""returns serialized `value`."""
 		pass
@@ -83,7 +93,7 @@ def serialized_gen(serializer, iterable):
 		yield serializer.dumps(item)
 
 
-class SerializerShimDatastore(ShimDatastore):
+class SerializerShimDatastore(basic.ShimDatastore):
 	"""Represents a Datastore that serializes and deserializes values.
 	
 	As data is ``put``, the serializer shim serializes it and ``put``s it into
@@ -91,27 +101,31 @@ class SerializerShimDatastore(ShimDatastore):
 	``get`` or ``query``) the data is retrieved from the ``child_datastore`` and
 	deserialized.
 	
-	Args:
-		datastore: a child datastore for the ShimDatastore superclass.
-		
-		serializer: a serializer object (responds to loads and dumps).
+	Arguments
+	---------
+	datastore
+		A child datastore for the ShimDatastore superclass.
+	serializer
+		A serializer object (responds to loads and dumps).
 	"""
 
 	# value serializer
 	# override this with their own custom serializer on a class-wide or per-
 	# instance basis. If you plan to store mostly strings, use NonSerializer.
 	serializer = default_serializer
-
+	
+	
 	def __init__(self, datastore, serializer=None):
 		"""Initializes internals and tests the serializer.
 		
-		Args:
-			datastore: a child datastore for the ShimDatastore superclass.
-			
-			serializer: a serializer object (responds to loads and dumps).
+		Arguments
+		---------
+		datastore
+			A child datastore for the ShimDatastore superclass.
+		serializer
+			A serializer object (responds to loads and dumps).
 		"""
-		super(SerializerShimDatastore, self).__init__(datastore)
-
+		super().__init__(datastore)
 		if serializer:
 			self.serializer = serializer
 
@@ -119,9 +133,10 @@ class SerializerShimDatastore(ShimDatastore):
 		test = {'value': repr(self)}
 		error_str = 'Serializer error: serialized value does not match original'
 		assert self.serializer.loads(self.serializer.dumps(test)) == test, error_str
-
-	def get(self, key):
-		"""Return the object named by key or None if it does not exist.
+	
+	
+	async def get(self, key):
+		"""Return the object named by key or raise `KeyError` if it does not exist.
 		Retrieves the value from the ``child_datastore``, and de-serializes
 		it on the way out.
 		
@@ -131,12 +146,11 @@ class SerializerShimDatastore(ShimDatastore):
 		Returns:
 			object or None
 		"""
-
-		""""""
-		value = self.child_datastore.get(key)
+		value = await util.stream.collect(self.child_datastore.get(key))  #FIXME
 		return self.serializer.loads(value) if value is not None else None
-
-	def put(self, key, value):
+	
+	
+	async def _put(self, key, value):
 		"""Stores the object `value` named by `key`.
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
@@ -145,11 +159,11 @@ class SerializerShimDatastore(ShimDatastore):
 			key: Key naming `value`
 			value: the object to store.
 		"""
+		value_bytes = await value.collect()  #FIXME
+		value_bytes = self.serializer.dumps(value_bytes)
+		await self.child_datastore.put(key, value_bytes)
 
-		value = self.serializer.dumps(value) if value is not None else None
-		self.child_datastore.put(key, value)
-
-	def query(self, query):
+	async def query(self, query):
 		"""Returns an iterable of objects matching criteria expressed in `query`
 		De-serializes values on the way out, using a :ref:`deserialized_gen` to
 		avoid incurring the cost of de-serializing all data at once, or ever, if
@@ -164,7 +178,7 @@ class SerializerShimDatastore(ShimDatastore):
 		"""
 
 		# run the query on the child datastore
-		cursor = self.child_datastore.query(query)
+		cursor = await self.child_datastore.query(query)
 
 		# chain the deserializing generator to the cursor's result set iterable
 		cursor._iterable = deserialized_gen(self.serializer, cursor._iterable)

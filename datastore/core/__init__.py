@@ -1,8 +1,4 @@
-__version__ = '0.3.6'
-__author__ = 'Juan Batiz-Benet'
-__email__ = 'juan@benet.ai'
-
-__doc__ = """
+"""
 datastore is a generic layer of abstraction for data store and database access.
 It is a **simple** API with the aim to enable application development in a
 datastore-agnostic way, allowing datastores to be swapped seamlessly without
@@ -10,6 +6,10 @@ changing application code. Thus, one can leverage different datastores with
 different strengths without committing the application to one datastore
 throughout its lifetime.
 """
+
+__version__ = '0.3.6'
+__author__ = 'Juan Batiz-Benet, Alexander Schlarb'
+__email__ = 'juan@benet.ai, alexander@ninetailed.ninja'
 
 # import key
 from .key import Key
