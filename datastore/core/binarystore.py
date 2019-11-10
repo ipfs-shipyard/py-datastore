@@ -106,28 +106,6 @@ class Datastore:
 		pass
 	
 	
-	#FIXME: This is quite useless for binary data stores
-	@abc.abstractmethod
-	async def query(self, query: query_.Query) -> query_.Cursor:
-		"""Returns an iterable of objects matching criteria expressed in `query`
-		
-		Implementations of query will be the largest differentiating factor
-		amongst datastores. All datastores **must** implement query, even using
-		query's worst case scenario, see :ref:class:`Query` for details.
-		
-		Arguments
-		---------
-		query
-			Object describing which objects to match and return
-		
-		Raises
-		------
-		RuntimeError
-			An internal error occurred
-		"""
-		pass
-	
-	
 	# Secondary API. Datastores MAY provide optimized implementations.
 	
 	
@@ -246,24 +224,6 @@ class DictDatastore(Datastore):
 		return key in self._collection(key)
 	
 	
-	async def query(self, query: query_.Query) -> query_.Cursor:
-		"""Returns an iterable of objects matching criteria expressed in `query`
-
-		Naively applies the query operations on the objects within the namespaced
-		collection corresponding to ``query.key.path``.
-
-		Arguments
-		---------
-		query
-			Query object describing the objects to return.
-		"""
-		# entire dataset already in memory, so ok to apply query naively
-		if str(query.key) in self._items:
-			return query(self._items[str(query.key)].values())
-		else:
-			return query([])
-	
-	
 	def __len__(self) -> int:
 		return sum(map(len, self._items.values()))
 
@@ -346,25 +306,6 @@ class Adapter(Datastore):
 			Key naming the object to check.
 		"""
 		return await self.child_datastore.contains(key)
-
-
-	async def query(self, query: query_.Query) -> query_.Cursor:
-		"""Returns an iterable of objects matching criteria expressed in `query`.
-		
-		Default shim implementation simply returns ``child_datastore.query(query)``
-		Override to provide different functionality, for example::
-		
-			def query(self, query):
-			  cursor = self.child_datastore.query(query)
-			  cursor._iterable = deserialized(cursor._iterable)
-			  return cursor
-		
-		Arguments
-		---------
-		query
-			Query object describing the objects to return.
-		"""
-		return await self.child_datastore.query(query)
 
 
 Datastore.ADAPTER_T = Adapter

@@ -139,10 +139,14 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		"""
 
 		# run the query on the child datastore
-		cursor = await self.child_datastore.query(query)
+		#FIXME: Would need to implement this
+		cursor = await self.child_datastore.query(query)  # type: ignore
 
 		# chain the deserializing generator to the cursor's result set iterable
-		cursor._iterable = deserialized_gen(self.serializer, cursor._iterable)
+		result = cursor._iterable
+		cursor._iterable = []
+		for field in result:
+			cursor._iterable.extend(self.serializer.loads(field))
 
 		return cursor
 	
