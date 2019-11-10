@@ -27,6 +27,17 @@ ArbitraryReceiveStream = typing.Union[
 ]
 
 
+class _ChannelSharedBase:
+	__slots__ = ("lock", "refcount")
+	
+	lock:     trio.Lock
+	refcount: int
+	
+	def __init__(self):
+		self.lock     = trio.Lock()
+		self.refcount = 1
+
+
 class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 	"""A slightly extended version of `trio`'s standard interface for receiving object streams.
 	
@@ -72,15 +83,27 @@ class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 		return result
 
 
+class _WrapingChannelShared(_ChannelSharedBase, typing.Generic[T_co]):
+	__slots__ = ("source",)
+	
+	source: typing.Union[None, typing.AsyncIterator[T_co], typing.Iterator[T_co]]
+
+
 class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	"""Abstracts over various forms of synchronous and asynchronous returning of
 	   object streams
 	"""
+	__slots__ = ("_shared", "_closed")
 	
-	_source: typing.Union[typing.AsyncIterator[T_co], typing.Iterator[T_co]]
+	_closed: bool
+	_shared: _WrapingChannelShared[T_co]
 	
-	def __init__(self, source: ArbitraryReceiveChannel[T_co]):
+	def __init__(self, source: ArbitraryReceiveChannel[T_co], *,
+	             _shared: typing.Optional[_WrapingChannelShared[T_co]] = None):
 		super().__init__()
+		
+		if _shared is not None:
+			self._shared = _shared
 		
 		source_val: typing.Union[typing.AsyncIterable[T_co], typing.Iterable[T_co]]
 		
@@ -98,35 +121,106 @@ class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			source_val = source
 		assert isinstance(source_val, (collections.abc.AsyncIterable, collections.abc.Iterable))
 		
+		self._closed = False
+		self._shared = _WrapingChannelShared()
 		if isinstance(source_val, collections.abc.AsyncIterable):
-			self._source = source_val.__aiter__()
+			self._shared.source = source_val.__aiter__()
 		else:
-			self._source = iter(source_val)
+			self._shared.source = iter(source_val)
 	
 	
-	async def receive(self) -> object:
-		if isinstance(self._source, collections.abc.AsyncIterator):
+	async def receive(self) -> T_co:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._shared.source is None:
+			raise trio.EndOfChannel()
+		
 			try:
-				return await self._source.__anext__()
+			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+				if isinstance(self._shared.source, collections.abc.AsyncIterator):
+					try:
+						return await self._shared.source.__anext__()
 			except StopAsyncIteration as exc:
-				await self.aclose()
 				raise trio.EndOfChannel() from exc
 		else:
 			try:
-				return next(self._source)
+						return next(self._shared.source)
 			except StopIteration as exc:
-				await self.aclose()
 				raise trio.EndOfChannel() from exc
+		except trio.BrokenResourceError:
+			await self.aclose(_mark_closed=True)
+			raise
+		except trio.EndOfChannel:
+			await self.aclose(_mark_closed=False)
+			raise
 	
 	
-	async def aclose(self) -> None:
+	def receive_nowait(self) -> T_co:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._shared.source is None:
+			raise trio.EndOfChannel()
+		
+		self._shared.lock.acquire_nowait()
 		try:
-			if isinstance(self._source, collections.abc.AsyncIterator):
-				await self._source.aclose()  # type: ignore  # We catch errors instead
+			if isinstance(self._shared.source, trio.abc.ReceiveChannel):
+				try:
+					return self._shared.source.receive_nowait()
+				except (trio.EndOfChannel, trio.BrokenResourceError):
+					# We cannot handle invoking async close here
+					raise trio.WouldBlock() from None
+			elif isinstance(self._shared.source, collections.abc.AsyncIterator):
+				# Cannot ask this stream type for a non-blocking value
+				raise trio.WouldBlock()
 			else:
-				self._source.close()  # type: ignore  # We catch errors instead
+				try:
+					return next(self._shared.source)
+				except StopIteration:
+					# We cannot handle invoking async close here
+					raise trio.WouldBlock() from None
+		finally:
+			self._shared.lock.release()
+	
+	
+	def clone(self) -> ReceiveChannel[T_co]:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		
+		if isinstance(self._shared.source, trio.abc.ReceiveChannel):
+			return WrapingReceiveChannel(self._shared.source.clone())
+		else:
+			try:
+				# Cast source value to ignore the possible `None` variant as the
+				# passed source value will be ignored if we provide `_shared`
+				source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
+				
+				return WrapingReceiveChannel(source, _shared=self._shared)
+			except BaseException:
+				raise
+			else:
+				self._shared.refcount += 1
+	
+	
+	async def aclose(self, *, _mark_closed: bool = True) -> None:
+		if not self._closed and _mark_closed:
+			self._closed = True
+		
+		if self._shared.source is None:
+			return
+		
+		self._shared.refcount -= 1
+		if self._shared.refcount != 0:
+			return
+		
+		try:
+			if isinstance(self._shared.source, collections.abc.AsyncIterator):
+				await self._shared.source.aclose()  # type: ignore  # We catch errors instead
+			else:
+				self._shared.source.close()  # type: ignore  # We catch errors instead
 		except AttributeError:
 			pass
+		finally:
+			self._shared.source = None
 
 
 def receive_channel_from(channel: ArbitraryReceiveChannel[T_co]) -> ReceiveChannel[T_co]:
