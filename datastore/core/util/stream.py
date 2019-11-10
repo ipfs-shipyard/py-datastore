@@ -42,6 +42,15 @@ class ReceiveStream(trio.abc.ReceiveStream):
 		Time of entry creation in seconds since the Unix epoch, or `None`
 		if unknown
 	"""
+	# The total length of this stream (if available)
+	size: typing.Union[int, None] = None
+	
+	# The backing record's last access time
+	atime: typing.Union[int, float, None] = None
+	# The backing record's last modification time
+	mtime: typing.Union[int, float, None] = None
+	# The backing record's creation (“birth”) time
+	btime: typing.Union[int, float, None] = None
 	
 	# This will actually bind the function just like any other method when
 	# instantiating this class
@@ -82,7 +91,7 @@ class WrapingReceiveStream(ReceiveStream):
 			
 		
 		self._buffer  = bytearray()
-		self._memview = None
+		self._memview = None  # type: typing.Optional[memoryview]
 		self._offset  = 0
 		if isinstance(source, trio.abc.ReceiveStream):
 			self._source = source
