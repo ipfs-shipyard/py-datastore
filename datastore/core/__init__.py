@@ -19,16 +19,13 @@ from .key import Namespace
 from .basic import Datastore
 from .basic import NullDatastore
 from .basic import DictDatastore
-from .basic import InterfaceMappingDatastore
 
 from .basic import ShimDatastore
-from .basic import CacheShimDatastore
 from .basic import LoggingDatastore
 from .basic import KeyTransformDatastore
 from .basic import LowercaseKeyDatastore
 from .basic import NamespaceDatastore
 from .basic import NestedPathDatastore
-from .basic import SymlinkDatastore
 from .basic import DirectoryTreeDatastore
 from .basic import DirectoryDatastore
 
