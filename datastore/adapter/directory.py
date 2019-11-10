@@ -44,13 +44,14 @@ class ObjectDirectorySupport:
 		Returns a boolean of whether a new directory was actually created or
 		not."""
 		try:
-			await (await self.get(dir_key)).aclose()
+			await (await super().get(dir_key)).aclose()
+		except KeyError:
+			await super()._put(dir_key, datastore.receive_channel_from([]))
+			return True
+		else:
 			if not exist_ok:
 				raise KeyError(str(dir_key))
 			return False
-		except KeyError:
-			await self._put(dir_key, datastore.receive_channel_from([]))
-			return True
 	
 	
 	@typing.no_type_check
@@ -78,14 +79,14 @@ class ObjectDirectorySupport:
 		
 		dir_items: typing.List[str] = []
 		try:
-			dir_items = [item async for item in await self.get(dir_key)]
+			dir_items = [item async for item in await super().get(dir_key)]
 		except KeyError:
 			if not create:
 				raise
 		
 		if key_str not in dir_items:
 			dir_items.append(key_str)
-			await self._put(dir_key, datastore.receive_channel_from(dir_items))
+			await super()._put(dir_key, datastore.receive_channel_from(dir_items))
 	
 	
 	@typing.no_type_check
@@ -99,17 +100,19 @@ class ObjectDirectorySupport:
 		key_str = str(key)
 		
 		try:
-			dir_items = [item async for item in await self.get(dir_key)]
+			dir_items = [item async for item in await super().get(dir_key)]
 		except KeyError:
 			if not missing_ok:
 				raise
 			return
 		
-		if key_str in dir_items:
-			dir_items = [k for k in dir_items if k != key]
-			self._put(dir_key, datastore.receive_channel_from(dir_items))
-		elif not missing_ok:
-			raise KeyError(f"{key} in {dir_key}")
+		try:
+			dir_items.remove(key_str)
+		except ValueError:
+			if not missing_ok:
+				raise KeyError(f"{key} in {dir_key}") from None
+		else:
+			await super()._put(dir_key, datastore.receive_channel_from(dir_items))
 
 
 
@@ -182,4 +185,4 @@ class ObjectDatastore(
 		"""Returns objects matching criteria expressed in `query`.
 		DirectoryTreeDatastore uses directory entries.
 		"""
-		return query(self.directory_read(query.key))
+		return query(super().directory_read(query.key))
