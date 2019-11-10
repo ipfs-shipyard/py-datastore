@@ -71,7 +71,7 @@ class Datastore:
 		RuntimeError
 			An internal error occurred
 		"""
-		await self._put(key, util.stream.WrapingReceiveStream(value))
+		await self._put(key, util.stream.receive_stream_from(value))
 	
 
 	@abc.abstractmethod
@@ -194,7 +194,7 @@ class DictDatastore(Datastore):
 		key
 			Key naming the object to retrieve.
 		"""
-		return util.stream.WrapingReceiveStream(self._collection(key)[key])
+		return util.stream.receive_stream_from(self._collection(key)[key])
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:

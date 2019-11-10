@@ -81,7 +81,7 @@ class Datastore(typing.Generic[T_co]):
 		RuntimeError
 			An internal error occurred
 		"""
-		await self._put(key, util.stream.WrapingReceiveChannel(value))
+		await self._put(key, util.stream.receive_channel_from(value))
 	
 
 	@abc.abstractmethod
@@ -203,7 +203,7 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		key
 			Key naming the object to retrieve.
 		"""
-		return util.stream.WrapingReceiveChannel(self._collection(key)[key])
+		return util.stream.receive_channel_from(self._collection(key)[key])
 
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
@@ -731,7 +731,7 @@ class DatastoreDirectoryMixin:
 		
 		if key_str not in dir_items:
 			dir_items.append(key_str)
-			await self._put(dir_key, util.stream.WrapingReceiveChannel(dir_items))
+			await self._put(dir_key, util.stream.receive_channel_from(dir_items))
 	
 	
 	@typing.no_type_check
@@ -753,7 +753,7 @@ class DatastoreDirectoryMixin:
 		
 		if key_str in dir_items:
 			dir_items = [k for k in dir_items if k != key]
-			self._put(dir_key, util.stream.WrapingReceiveChannel(dir_items))
+			self._put(dir_key, util.stream.receive_channel_from(dir_items))
 		elif not missing_ok:
 			raise KeyError(f"{key} in {dir_key}")
 

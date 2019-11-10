@@ -8,6 +8,7 @@ import trio.abc
 
 T    = typing.TypeVar("T")
 T_co = typing.TypeVar("T_co", covariant=True)
+U_co = typing.TypeVar("U_co", covariant=True)
 
 
 ArbitraryReceiveChannel = typing.Union[
@@ -67,13 +68,13 @@ class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 	# The backing record's creation (“birth”) time
 	btime: typing.Optional[typing.Union[int, float]]
 	
-	
+
 	def __init__(self):
 		self.count = None
 		self.atime = None
 		self.mtime = None
 		self.btime = None
-	
+
 	
 	async def collect(self) -> typing.List[T_co]:
 		result: typing.List[T_co] = []
@@ -83,50 +84,75 @@ class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 		return result
 
 
-class _WrapingChannelShared(_ChannelSharedBase, typing.Generic[T_co]):
+
+class _WrapingTrioReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
+	__slots__ = ("_source",)
+	
+	_source: trio.abc.ReceiveChannel[T_co]
+	
+	
+	def __init__(self, source: trio.abc.ReceiveChannel[T_co]):
+		super().__init__()
+		
+		self._source = source
+	
+	
+	async def receive(self) -> T_co:
+		return await self._source.receive()
+	
+	
+	def receive_nowait(self) -> T_co:
+		return self._source.receive_nowait()
+	
+	
+	def clone(self) -> ReceiveChannel[T_co]:
+		return self.__class__(self._source.clone())
+	
+	
+	async def aclose(self) -> None:
+		await self._source.aclose()
+
+
+
+class _WrapingChannelShared(_ChannelSharedBase, typing.Generic[U_co]):
 	__slots__ = ("source",)
 	
-	source: typing.Union[None, typing.AsyncIterator[T_co], typing.Iterator[T_co]]
+	source: typing.Optional[U_co]
+	
+	
+	def __init__(self, source: U_co):
+		super().__init__()
+		
+		self.source = source
 
 
-class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
+
+class _WrapingIterReceiveChannelBase(ReceiveChannel[T_co], typing.Generic[T_co, U_co]):
 	"""Abstracts over various forms of synchronous and asynchronous returning of
 	   object streams
 	"""
-	__slots__ = ("_shared", "_closed")
+	__slots__ = ("_closed", "_shared")
 	
 	_closed: bool
-	_shared: _WrapingChannelShared[T_co]
+	_shared: _WrapingChannelShared[U_co]
 	
-	def __init__(self, source: ArbitraryReceiveChannel[T_co], *,
-	             _shared: typing.Optional[_WrapingChannelShared[T_co]] = None):
+	def __init__(self, source: typing.Optional[U_co], *,
+	             _shared: typing.Optional[_WrapingChannelShared[U_co]] = None):
 		super().__init__()
 		
-		if _shared is not None:
-			self._shared = _shared
-		
-		source_val: typing.Union[typing.AsyncIterable[T_co], typing.Iterable[T_co]]
-		
-		# Handle special cases, so that we'll end up either with a synchronous
-		# or an asynchrous iterable (also tries to calculate the expected total
-		# number of objects ahead of time for some known cases)
-		if isinstance(source, collections.abc.Awaitable):
-			async def await_iter_wrapper(source):
-				yield await source
-			source_val = await_iter_wrapper(source)
-		elif isinstance(source, collections.abc.Sequence):
-			self.count = len(source)
-			source_val = source
-		else:
-			source_val = source
-		assert isinstance(source_val, (collections.abc.AsyncIterable, collections.abc.Iterable))
+		assert source is not None or _shared is not None
 		
 		self._closed = False
-		self._shared = _WrapingChannelShared()
-		if isinstance(source_val, collections.abc.AsyncIterable):
-			self._shared.source = source_val.__aiter__()
+		if _shared is None:
+			assert source is not None
+			self._shared = _WrapingChannelShared(source)
 		else:
-			self._shared.source = iter(source_val)
+			self._shared = _shared
+	
+	
+	@abc.abstractmethod
+	async def _receive(self) -> T_co:
+		pass
 	
 	
 	async def receive(self) -> T_co:
@@ -135,24 +161,20 @@ class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		if self._shared.source is None:
 			raise trio.EndOfChannel()
 		
-			try:
+		try:
 			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
-				if isinstance(self._shared.source, collections.abc.AsyncIterator):
-					try:
-						return await self._shared.source.__anext__()
-			except StopAsyncIteration as exc:
-				raise trio.EndOfChannel() from exc
-		else:
-			try:
-						return next(self._shared.source)
-			except StopIteration as exc:
-				raise trio.EndOfChannel() from exc
+				return await self._receive()
 		except trio.BrokenResourceError:
 			await self.aclose(_mark_closed=True)
 			raise
 		except trio.EndOfChannel:
 			await self.aclose(_mark_closed=False)
 			raise
+	
+	
+	@abc.abstractmethod
+	def _receive_nowait(self) -> T_co:
+		pass
 	
 	
 	def receive_nowait(self) -> T_co:
@@ -163,21 +185,7 @@ class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		
 		self._shared.lock.acquire_nowait()
 		try:
-			if isinstance(self._shared.source, trio.abc.ReceiveChannel):
-				try:
-					return self._shared.source.receive_nowait()
-				except (trio.EndOfChannel, trio.BrokenResourceError):
-					# We cannot handle invoking async close here
-					raise trio.WouldBlock() from None
-			elif isinstance(self._shared.source, collections.abc.AsyncIterator):
-				# Cannot ask this stream type for a non-blocking value
-				raise trio.WouldBlock()
-			else:
-				try:
-					return next(self._shared.source)
-				except StopIteration:
-					# We cannot handle invoking async close here
-					raise trio.WouldBlock() from None
+			return self._receive_nowait()
 		finally:
 			self._shared.lock.release()
 	
@@ -186,19 +194,17 @@ class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		if self._closed:
 			raise trio.ClosedResourceError()
 		
-		if isinstance(self._shared.source, trio.abc.ReceiveChannel):
-			return WrapingReceiveChannel(self._shared.source.clone())
+		try:
+			return self.__class__(None, _shared=self._shared)
+		except BaseException:
+			raise
 		else:
-			try:
-				# Cast source value to ignore the possible `None` variant as the
-				# passed source value will be ignored if we provide `_shared`
-				source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
-				
-				return WrapingReceiveChannel(source, _shared=self._shared)
-			except BaseException:
-				raise
-			else:
-				self._shared.refcount += 1
+			self._shared.refcount += 1
+	
+	
+	@abc.abstractmethod
+	async def _close_source(self) -> None:
+		pass
 	
 	
 	async def aclose(self, *, _mark_closed: bool = True) -> None:
@@ -213,18 +219,118 @@ class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			return
 		
 		try:
-			if isinstance(self._shared.source, collections.abc.AsyncIterator):
-				await self._shared.source.aclose()  # type: ignore  # We catch errors instead
-			else:
-				self._shared.source.close()  # type: ignore  # We catch errors instead
+			await self._close_source()
 		except AttributeError:
 			pass
 		finally:
 			self._shared.source = None
 
 
+class _WrapingAsyncIterReceiveChannel(
+		_WrapingIterReceiveChannelBase[T_co, typing.AsyncIterator[T_co]],
+		typing.Generic[T_co]
+):
+	def __init__(self, source: typing.Optional[typing.AsyncIterable[T_co]], **kwargs):
+		super().__init__(source.__aiter__() if source is not None else None, **kwargs)
+	
+	
+	async def _receive(self) -> T_co:
+		assert self._shared.source is not None
+		
+		try:
+			return await self._shared.source.__anext__()
+		except StopAsyncIteration as exc:
+			raise trio.EndOfChannel() from exc
+	
+	
+	def _receive_nowait(self) -> T_co:
+		# Cannot ask this stream type for a non-blocking value
+		raise trio.WouldBlock()
+	
+	
+	async def _close_source(self) -> None:
+		try:
+			await self._shared.source.aclose()  # type: ignore  # We catch errors instead
+		except AttributeError:
+			pass
+
+
+
+class _WrapingSyncIterReceiveChannel(
+		_WrapingIterReceiveChannelBase[T_co, typing.Iterator[T_co]],
+		typing.Generic[T_co]
+):
+	def __init__(self, source: typing.Optional[typing.Iterable[T_co]],
+	             count_hint: typing.Optional[int] = None, **kwargs):
+		super().__init__(iter(source) if source is not None else None, **kwargs)
+		
+		self.count = count_hint
+	
+	
+	async def _receive(self) -> T_co:
+		assert self._shared.source is not None
+		
+		try:
+			return next(self._shared.source)
+		except StopIteration as exc:
+			raise trio.EndOfChannel() from exc
+	
+	
+	def _receive_nowait(self) -> T_co:
+		assert self._shared.source is not None
+		
+		try:
+			return next(self._shared.source)
+		except StopIteration:
+			# We cannot handle invoking async close here
+			raise trio.WouldBlock() from None
+	
+	
+	async def _close_source(self) -> None:
+		try:
+			self._shared.source.close()  # type: ignore  # We catch errors instead
+		except AttributeError:
+			pass
+
+
+
 def receive_channel_from(channel: ArbitraryReceiveChannel[T_co]) -> ReceiveChannel[T_co]:
-	return WrapingReceiveChannel(channel)
+	# Optimization: Reuse given stream object, rather then creating a new
+	#               wrapper when it is already of the right interface type
+	if isinstance(channel, ReceiveChannel):
+		return channel
+	
+	# Optimization: Wrap the given Trio stream object in a tiny wrapper that
+	#               just passes through all calls, but adds our extra fields
+	#               and values
+	if isinstance(channel, trio.abc.ReceiveChannel):
+		return _WrapingTrioReceiveChannel(channel)
+	
+	# Handle asynchronous iterables
+	if isinstance(channel, (collections.abc.AsyncIterable, collections.abc.Awaitable)):
+		source1: typing.AsyncIterable[T_co]
+		
+		if isinstance(channel, collections.abc.Awaitable):
+			async def await_iter_wrapper(channel: typing.Awaitable[T_co]) \
+					-> typing.AsyncIterable[T_co]:
+				yield await channel
+			source1 = await_iter_wrapper(channel)
+		else:
+			source1 = channel
+		
+		return _WrapingAsyncIterReceiveChannel(source1)
+	
+	# Handle synchronous iterables (and try to deduce the length in each case possible)
+	if isinstance(channel, collections.abc.Iterable):
+		count:  typing.Optional[int]  = None
+		source2: typing.Iterable[T_co] = channel
+		
+		if isinstance(source2, collections.abc.Sequence):
+			count = len(source2)
+		
+		return _WrapingSyncIterReceiveChannel(source2, count)
+	
+	assert False, "Unreachable code"
 
 
 
@@ -281,63 +387,67 @@ class ReceiveStream(trio.abc.ReceiveStream):
 
 
 
-class WrapingReceiveStream(ReceiveStream):
+
+class _WrapingTrioReceiveStream(ReceiveStream):
+	"""
+	Abstracts over a bare `trio.abc.ReceiveStream` to add our standard fields
+	and methods to that stream
+	"""
+	__slots__ = ("_source",)
+	
+	_source: trio.abc.ReceiveStream
+	
+	def __init__(self, source: trio.abc.ReceiveStream):
+		super().__init__()
+		
+		self._source = source
+	
+	
+	async def receive_some(self, max_bytes: typing.Optional[int] = None) -> bytes:
+		return await self._source.receive_some(max_bytes)
+	
+	
+	async def aclose(self) -> None:
+		await self._source.aclose()
+
+
+
+class _WrapingIterReceiveStreamBase(ReceiveStream, typing.Generic[T_co]):
 	"""Abstracts over various forms of synchronous and asynchronous returning of
 	   byte streams
 	"""
 	
+	__slots__ = ("_buffer", "_memview", "_offset", "_closed", "_source")
+	
 	_buffer:  bytearray
-	_memview: typing.Union[memoryview, None]
+	_memview: typing.Optional[memoryview]
 	_offset:  int
+	_closed:  bool
 	
-	_source: typing.Union[typing.AsyncIterator[bytes], typing.Iterator[bytes]]
+	_source: typing.Optional[T_co]
 	
-	def __init__(self, source):
+	def __init__(self, source: T_co):
 		super().__init__()
 		
-		# Handle special cases, so that we'll end up either with a synchronous
-		# or an asynchrous iterable (also tries to calculate the expected total
-		# stream size ahead of time for some known cases)
-		source_val: typing.Union[trio.abc.ReceiveStream,
-		                         typing.AsyncIterable[bytes],
-		                         typing.Iterable[bytes]]
-		if isinstance(source, collections.abc.Awaitable):
-			async def await_iter_wrapper(source):
-				yield await source
-			source_val = await_iter_wrapper(source)
-		elif isinstance(source, bytes):
-			self.size = len(source)
-			source_val = (source,)
-		elif isinstance(source, collections.abc.Sequence):
-			# Remind mypy that the result of the above test is
-			# `Sequence[bytes]`, not `Sequence[Any]` in this case
-			source = typing.cast(typing.Sequence[bytes], source)
-			
-			self.size = sum(len(item) for item in source)
-			source_val = source
-		elif isinstance(source, io.BytesIO):
-			# Ask in-memory stream for its remaining length, restoring its
-			# original state afterwards
-			pos = source.tell()
-			source.seek(0, io.SEEK_END)
-			self.size = source.tell() - pos
-			source.seek(pos, io.SEEK_SET)
-			source_val = source
-		else:
-			source_val = source
+		self._source = source
 		
 		self._buffer  = bytearray()
-		self._memview: typing.Optional[memoryview] = None
+		self._memview = None
 		self._offset  = 0
-		if isinstance(source_val, trio.abc.ReceiveStream):
-			self._source = source_val
-		elif isinstance(source_val, collections.abc.AsyncIterable):
-			self._source = source_val.__aiter__()
-		else:
-			self._source = iter(source_val)
+		self._closed  = False
 	
 	
-	async def receive_some(self, max_bytes=None):
+	@abc.abstractmethod
+	async def _receive(self, max_bytes: typing.Optional[int]) -> bytes:
+		pass
+	
+	
+	async def receive_some(self, max_bytes: typing.Optional[int] = None) -> bytes:
+		if self._closed:
+			raise trio.ClosedResourceError()
+		if self._source is None:
+			return b""
+		
 		# Serve chunks from buffer if there is any data that hasn't been
 		# delivered yet
 		if self._memview:
@@ -349,53 +459,156 @@ class WrapingReceiveStream(ReceiveStream):
 			result = bytes(self._memview[self._offset:end_offset])
 			if end_offset >= len(self._memview):
 				self._offset = 0
-				self._memview.release()
+				self._memview.release()  # type: ignore  # Fixed in mypy 0.350
 				self._memview = None
 				self._buffer.clear()
 			return result
 		
 		
-		at_end = False
-		while not at_end:
-			value = b""
-			if isinstance(self._source, trio.abc.ReceiveStream):
-				# This branch is just an optimization to pass `max_bytes` along
-				# to subordinated ReceiveStreams
-				value = await self._source.receive_some(max_bytes)
-				at_end = (len(value) < 1)
-			elif isinstance(self._source, collections.abc.AsyncIterator):
-				try:
-					value = await self._source.__anext__()
-				except StopAsyncIteration:
-					at_end = True
-			else:
-				try:
-					value = next(self._source)
-				except StopIteration:
-					at_end = True
-			
-			# Skip empty returned byte strings as they have a special meaning here
-			if len(value) < 1:
-				continue
-			
-			# Stash extra bytes that are too large for our receiver
-			if max_bytes is not None and max_bytes > len(value):
-				self._buffer += value[max_bytes:]
-				self._memview = memoryview(self._buffer)
-				value = value[:max_bytes]
-			
-			return value
+		value = await self._receive(max_bytes)
 		
-		# We're at the end
-		await self.aclose()
-		return b""
+		assert isinstance(value, bytes), \
+		       f"Source stream {repr(self._source)} returned non-byte segment"
+		
+		if len(value) < 1:
+			# We're at the end
+			await self.aclose(_mark_closed=False)
+			return b""
+		
+		# Stash extra bytes that are too large for our receiver
+		if max_bytes is not None and max_bytes > len(value):
+			self._buffer += value[max_bytes:]
+			self._memview = memoryview(self._buffer)
+			value = value[:max_bytes]
+		
+		return value
 	
 	
-	async def aclose(self):
+	@abc.abstractmethod
+	async def _close_source(self) -> None:
+		pass
+	
+	
+	async def aclose(self, *, _mark_closed=True) -> None:
+		if not self._closed and _mark_closed:
+			self._closed = True
+		
+		if self._source is None:
+			return
+		
 		try:
-			if isinstance(self._source, collections.abc.Iterable):
-				await self._source.aclose()  # type: ignore  # We catch errors instead
-			else:
-				self._source.close()  # type: ignore  # We catch errors instead
+			await self._close_source()
+		finally:
+			self._source = None
+			if self._memview is not None:
+				self._memview.release()  # type: ignore  # Fixed in mypy 0.450
+				self._memview = None
+			self._buffer.clear()
+
+
+class _WrapingAsyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.AsyncIterator[bytes]]):
+	def __init__(self, source: typing.AsyncIterable[bytes]):
+		super().__init__(source.__aiter__())
+	
+	
+	async def _receive(self, _: typing.Optional[int]) -> bytes:
+		assert self._source is not None
+		
+		# Skip empty returned byte strings as they have a special meaning here
+		value = b""
+		while len(value) < 1:
+			try:
+				value = await self._source.__anext__()
+			except StopAsyncIteration:
+				return b""
+		return value
+	
+	
+	async def _close_source(self) -> None:
+		try:
+			await self._source.aclose()  # type: ignore[union-attr]  # We catch errors instead
 		except AttributeError:
 			pass
+
+
+
+class _WrapingSyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.Iterator[bytes]]):
+	def __init__(self, source: typing.Iterable[bytes], size_hint: typing.Optional[int]):
+		super().__init__(iter(source))
+		
+		self.size = size_hint
+	
+	
+	async def _receive(self, _: typing.Optional[int]) -> bytes:
+		assert self._source is not None
+		
+		# Skip empty returned byte strings as they have a special meaning here
+		value = b""
+		while len(value) < 1:
+			try:
+				value = next(self._source)
+			except StopIteration:
+				return b""
+		return value
+	
+	
+	async def _close_source(self) -> None:
+		try:
+			self._source.close()  # type: ignore[union-attr]  # We catch errors instead
+		except AttributeError:
+			pass
+
+
+
+def receive_stream_from(stream: ArbitraryReceiveStream) -> ReceiveStream:
+	# Optimization: Reuse given stream object, rather then creating a new
+	#               wrapper when it is already of the right interface type
+	if isinstance(stream, ReceiveStream):
+		return stream
+	
+	# Optimization: Wrap the given Trio stream object in a tiny wrapper that
+	#               just passes through all calls, but adds our extra fields
+	#               and values
+	if isinstance(stream, trio.abc.ReceiveStream):
+		return _WrapingTrioReceiveStream(stream)
+	
+	# Handle asynchronous iterables
+	if isinstance(stream, (collections.abc.AsyncIterable, collections.abc.Awaitable)):
+		source1: typing.AsyncIterable[bytes]
+		
+		# Wrap awaitables of bytes in an asynchronous iterable that yields once
+		if isinstance(stream, collections.abc.Awaitable):
+			async def await_iter_wrapper(stream: typing.Awaitable[bytes]) \
+					-> typing.AsyncIterable[bytes]:
+				yield await stream
+			source1 = await_iter_wrapper(stream)
+		else:
+			source1 = stream
+		
+		return _WrapingAsyncIterReceiveStream(source1)
+	
+	# Handle synchronous iterables (and try to deduce the length in each case possible)
+	if isinstance(stream, (bytes, collections.abc.Iterable)):
+		size:    typing.Optional[int] = None
+		source2: typing.Iterable[bytes]
+		
+		# Wrap a simple bytes value in a tuple to make it an iterable
+		if isinstance(stream, bytes):
+			source2 = (stream,)
+		else:
+			source2 = stream
+		
+		# Deduce the length of sequences of bytes (including the single bytes sequence above)
+		if isinstance(source2, collections.abc.Sequence):
+			size = sum(len(item) for item in source2)
+		# … and in-memory byte stream files as well
+		elif isinstance(source2, io.BytesIO):
+			# Asks for just the remaining length, restoring the position afterwards
+			pos = source2.tell()
+			source2.seek(0, io.SEEK_END)
+			size = source2.tell() - pos
+			source2.seek(pos, io.SEEK_SET)
+		
+		return _WrapingSyncIterReceiveStream(source2, size)
+	
+	assert False, "Unreachable code"
