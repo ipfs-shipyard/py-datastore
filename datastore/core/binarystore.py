@@ -1,4 +1,5 @@
 import abc
+import collections.abc
 import typing
 
 import trio
@@ -7,6 +8,22 @@ from . import key as key_
 from . import query as query_
 class util:  # noqa
 	from .util import stream
+
+
+def is_valid_value_type(value: util.stream.ArbitraryReceiveStream) -> bool:
+	"""Checks that `value` is of the right type for `Datastore.put`
+	
+	It's just too easy to acidentally pass in the wrong type without this check.
+	Unfortunately this cannot check whether iterators return the correct types,
+	so the utility of this function unfortunately is limited to some extent.
+	"""
+	return isinstance(value, (
+		trio.abc.ReceiveStream,
+		collections.abc.AsyncIterable,
+		collections.abc.Awaitable,
+		collections.abc.Iterable,
+		bytes
+	)) and not isinstance(value, str)
 
 
 
@@ -75,6 +92,7 @@ class Datastore:
 		RuntimeError
 			An internal error occurred
 		"""
+		assert is_valid_value_type(value)
 		await self._put(key, util.stream.receive_stream_from(value))
 	
 

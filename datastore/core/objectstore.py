@@ -1,4 +1,5 @@
 import abc
+import collections.abc
 import typing
 
 import trio
@@ -12,6 +13,21 @@ class util:  # noqa
 T_co = typing.TypeVar("T_co", covariant=True)
 U_co = typing.TypeVar("U_co", covariant=True)
 
+
+
+def is_valid_value_type(value: util.stream.ArbitraryReceiveChannel) -> bool:
+	"""Checks that `value` is of the right type for `Datastore.put`
+
+	It's just too easy to acidentally pass in the wrong type without this check.
+	Unfortunately this cannot check whether iterators return the correct types,
+	so the utility of this function unfortunately is limited to some extent.
+	"""
+	return isinstance(value, (
+		trio.abc.ReceiveChannel,
+		collections.abc.AsyncIterable,
+		collections.abc.Awaitable,
+		collections.abc.Iterable
+	)) and not isinstance(value, (str, bytes))
 
 
 class Datastore(typing.Generic[T_co]):
@@ -82,6 +98,7 @@ class Datastore(typing.Generic[T_co]):
 		RuntimeError
 			An internal error occurred
 		"""
+		assert is_valid_value_type(value)
 		await self._put(key, util.stream.receive_channel_from(value))
 	
 
@@ -184,7 +201,7 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	
 	def __init__(self):
 		self._items = dict()
-	
+
 	
 	def _collection(self, key: key_.Key) -> typing.Dict[key_.Key, typing.List[T_co]]:
 		"""Returns the namespace collection for `key`."""
@@ -192,13 +209,13 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		if collection not in self._items:
 			self._items[collection] = dict()
 		return self._items[collection]
-	
+
 	
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the object named by `key` or raises `KeyError`.
-		
+
 		Retrieves the object from the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
@@ -209,9 +226,9 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
-		
+
 		Stores the object in the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
@@ -221,36 +238,36 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		"""
 		self._collection(key)[key] = await value.collect()
 	
-	
+
 	async def delete(self, key: key_.Key) -> None:
 		"""Removes the object named by `key` or raises `KeyError` if it did not
 		   exist.
-		
+
 		Removes the object from the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
 			Key naming the object to remove.
 		"""
 		del self._collection(key)[key]
-		
+
 		if len(self._collection(key)) == 0:
 			del self._items[str(key.path)]
 	
 	
 	async def contains(self, key: key_.Key) -> bool:
 		"""Returns whether the object named by `key` exists.
-		
+
 		Checks for the object in the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
 			Key naming the object to check.
 		"""
 		return key in self._collection(key)
-	
+
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
@@ -268,7 +285,7 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 			return query(self._items[str(query.key)].values())
 		else:
 			return query([])
-	
+
 	
 	def __len__(self) -> int:
 		return sum(map(len, self._items.values()))
@@ -278,7 +295,7 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	"""Represents a non-concrete datastore that adds functionality between the
 	   client and a lower-level datastore.
-	
+
 	Shim datastores do not actually store
 	data themselves; instead, they delegate storage to an underlying child
 	datastore. The default implementation just passes all calls to the child.
@@ -286,12 +303,12 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	
 	child_datastore: Datastore[U_co]
 	
-	
+
 	def __init__(self, datastore: Datastore[U_co]):
 		"""Initializes this DatastoreAdapter with child `datastore`."""
 		self.child_datastore = datastore
-	
-	
+
+
 	# default implementation just passes all calls to child
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the object named by `key` or raises `KeyError` if it does
@@ -314,18 +331,18 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		# (It's basically the callers job to ensure that the datastore adapter
 		#  used can in fact perform this conversion.)
 		return typing.cast(util.stream.ReceiveChannel[T_co], await self.child_datastore.get(key))
-	
+
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
-		
+
 		Default shim implementation simply calls ``child_datastore.put(key, value)``
 		Override to provide different functionality, for example::
-		
+
 			def put(self, key, value):
 			  value = json.dumps(value)
 			  self.child_datastore.put(key, value)
-		
+
 		Arguments
 		---------
 		key
@@ -335,7 +352,7 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		"""
 		# See :meth:`~get` for why we cast here
 		await self.child_datastore.put(key, typing.cast(util.stream.ReceiveChannel[U_co], value))
-	
+
 	
 	async def delete(self, key: key_.Key) -> None:
 		"""Removes the object named by `key`.
@@ -347,19 +364,19 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		  key: Key naming the object to remove.
 		"""
 		await self.child_datastore.delete(key)
-	
+
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`.
-		
+
 		Default shim implementation simply returns ``child_datastore.query(query)``
 		Override to provide different functionality, for example::
-		
+
 			def query(self, query):
 			  cursor = self.child_datastore.query(query)
 			  cursor._iterable = deserialized(cursor._iterable)
 			  return cursor
-		
+
 		Arguments
 		---------
 		query
