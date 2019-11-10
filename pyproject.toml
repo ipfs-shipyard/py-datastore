@@ -3,9 +3,9 @@ requires = ["flit"]
 build-backend = "flit.buildapi"
 
 [tool.flit.metadata]
-module = "py-datastore"
-#author       = ""
-#author-email = ""
+module = "datastore"
+author       = ""
+author-email = ""
 home-page    = "https://github.com/ipfs/py-datastore"
 keywords     = "ipfs datastore database development"
 license      = "MIT License"
@@ -17,15 +17,15 @@ requires-python = ">=3.7"
 requires = []
 
 classifiers = [
-	"Development Status :: In Progress",
+	"Development Status :: 3 - Alpha",
 	"Intended Audience :: Developers",
 	"Intended Audience :: Information Technology",
 	"Intended Audience :: Science/Research",
 
+	"Topic :: Communications :: File Sharing",
 	"Topic :: Internet",
 	"Topic :: Scientific/Engineering",
-	"Topic :: System :: Files",
-	"Topic :: System :: Data-Storage",
+	"Topic :: System :: Filesystems",
 
 	# Pick your license as you wish (should match "license" above)
 	"License :: OSI Approved :: MIT License",
