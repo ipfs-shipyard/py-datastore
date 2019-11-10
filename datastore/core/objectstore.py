@@ -8,9 +8,16 @@ from . import query as query_
 class util:  # noqa
 	from .util import stream
 
+if typing.TYPE_CHECKING:
+	import logging
 
 
-class Datastore:
+T_co = typing.TypeVar("T_co", covariant=True)
+U_co = typing.TypeVar("U_co", covariant=True)
+
+
+
+class Datastore(typing.Generic[T_co]):
 	"""A Datastore represents storage for any string key to an arbitrary Python object pair.
 
 	Datastores are general enough to be backed by all kinds of different storage:
@@ -26,12 +33,12 @@ class Datastore:
 	databases where fields should be decomposed into columns), particularly to
 	support queries efficiently.
 	"""
-
+	
 	# Main API. Datastore implementations MUST implement these methods.
 	
 	
 	@abc.abstractmethod
-	async def get(self, key: key_.Key) -> trio.abc.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the objects named by `key` or raises `KeyError` otherwise
 		
 		If this datastore does not support chunking all data will be returned
@@ -58,7 +65,7 @@ class Datastore:
 		pass
 
 
-	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel) -> None:
+	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co]) -> None:
 		"""Stores or replaces the object named by `key` with `value`
 		
 		Arguments
@@ -78,7 +85,7 @@ class Datastore:
 	
 
 	@abc.abstractmethod
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Like :meth:`put`, but always receives a `datastore.util.ReceiveCahnnel`
 		   compatible object, so that your datastore implementation doesn't
 		   have to do any conversion
@@ -148,14 +155,14 @@ class Datastore:
 
 
 
-class NullDatastore(Datastore):
+class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Stores nothing, but conforms to the API. Useful to test with."""
 
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Unconditionally raise `KeyError`"""
 		raise KeyError(key)
 
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Do nothing with `key` and ignore the `value`"""
 		pass
 
@@ -169,41 +176,41 @@ class NullDatastore(Datastore):
 
 
 
-class DictDatastore(Datastore):
+class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Simple straw-man in-memory datastore backed by nested dicts."""
 
-	_items: typing.Dict[str, typing.Dict[key_.Key, object]]
+	_items: typing.Dict[str, typing.Dict[key_.Key, typing.List[T_co]]]
 	
 	def __init__(self):
 		self._items = dict()
+
 	
-	
-	def _collection(self, key: key_.Key) -> typing.Dict[key_.Key, object]:
+	def _collection(self, key: key_.Key) -> typing.Dict[key_.Key, typing.List[T_co]]:
 		"""Returns the namespace collection for `key`."""
 		collection = str(key.path)
 		if collection not in self._items:
 			self._items[collection] = dict()
 		return self._items[collection]
+
 	
-	
-	async def get(self, key: key_.Key) -> trio.abc.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the object named by `key` or raises `KeyError`.
-		
+
 		Retrieves the object from the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
 			Key naming the object to retrieve.
 		"""
 		return util.stream.WrapingReceiveChannel(self._collection(key)[key])
+
 	
-	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
-		
+
 		Stores the object in the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
@@ -213,36 +220,36 @@ class DictDatastore(Datastore):
 		"""
 		self._collection(key)[key] = await value.collect()
 	
-	
+
 	async def delete(self, key: key_.Key) -> None:
 		"""Removes the object named by `key` or raises `KeyError` if it did not
 		   exist.
-		
+
 		Removes the object from the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
 			Key naming the object to remove.
 		"""
 		del self._collection(key)[key]
-		
+
 		if len(self._collection(key)) == 0:
 			del self._items[str(key.path)]
 	
 	
 	async def contains(self, key: key_.Key) -> bool:
 		"""Returns whether the object named by `key` exists.
-		
+
 		Checks for the object in the collection corresponding to ``key.path``.
-		
+
 		Arguments
 		---------
 		key
 			Key naming the object to check.
 		"""
 		return key in self._collection(key)
-	
+
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
@@ -260,31 +267,31 @@ class DictDatastore(Datastore):
 			return query(self._items[str(query.key)].values())
 		else:
 			return query([])
-	
+
 	
 	def __len__(self) -> int:
 		return sum(map(len, self._items.values()))
 
 
 
-class Adapter(Datastore):
+class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	"""Represents a non-concrete datastore that adds functionality between the
 	   client and a lower-level datastore.
-	
+
 	Shim datastores do not actually store
 	data themselves; instead, they delegate storage to an underlying child
 	datastore. The default implementation just passes all calls to the child.
 	"""
-	child_datastore: Datastore
+	child_datastore: Datastore[U_co]
 	
-	
-	def __init__(self, datastore: Datastore):
+
+	def __init__(self, datastore: Datastore[U_co]):
 		"""Initializes this DatastoreAdapter with child `datastore`."""
 		self.child_datastore = datastore
-	
-	
+
+
 	# default implementation just passes all calls to child
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the object named by `key` or raises `KeyError` if it does
 		   not exist.
 
@@ -300,19 +307,23 @@ class Adapter(Datastore):
 		key
 			Key naming the object to retrieve
 		"""
-		return await self.child_datastore.get(key)
+		# Cast the following so that we can have child object stores with
+		# types different from their parent
+		# (It's basically the callers job to ensure that the datastore adapter
+		#  used can in fact perform this conversion.)
+		return typing.cast(util.stream.ReceiveChannel[T_co], await self.child_datastore.get(key))
+
 	
-	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
-		
+
 		Default shim implementation simply calls ``child_datastore.put(key, value)``
 		Override to provide different functionality, for example::
-		
+
 			def put(self, key, value):
 			  value = json.dumps(value)
 			  self.child_datastore.put(key, value)
-		
+
 		Arguments
 		---------
 		key
@@ -320,8 +331,9 @@ class Adapter(Datastore):
 		value
 			The object to store.
 		"""
-		await self.child_datastore.put(key, value)
-	
+		# See :meth:`~get` for why we cast here
+		await self.child_datastore.put(key, typing.cast(util.stream.ReceiveChannel[U_co], value))
+
 	
 	async def delete(self, key: key_.Key) -> None:
 		"""Removes the object named by `key`.
@@ -333,19 +345,19 @@ class Adapter(Datastore):
 		  key: Key naming the object to remove.
 		"""
 		await self.child_datastore.delete(key)
-	
+
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`.
-		
+
 		Default shim implementation simply returns ``child_datastore.query(query)``
 		Override to provide different functionality, for example::
-		
+
 			def query(self, query):
 			  cursor = self.child_datastore.query(query)
 			  cursor._iterable = deserialized(cursor._iterable)
 			  return cursor
-		
+
 		Arguments
 		---------
 		query
@@ -366,20 +378,20 @@ class Adapter(Datastore):
 
 
 
-class LoggingAdapter(Adapter):
+class LoggingAdapter(Adapter[T_co, T_co], typing.Generic[T_co]):
 	"""Wraps a datastore with a logging shim."""
 	
-	def __init__(self, child_datastore, logger=None):
+	def __init__(self, child_datastore: Datastore, logger: "logging.Logger" = None):
 		if not logger:
 			import logging
-			logger = logging
+			logger = logging.getLogger()
 		
-		self.logger = logger
+		self.logger: logging.Logger = logger
 		
 		super().__init__(child_datastore)
 	
 	
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Return the object named by key or None if it does not exist.
 		   LoggingDatastore logs the access.
 		"""
@@ -389,7 +401,7 @@ class LoggingAdapter(Adapter):
 		return value
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`self.
 		   LoggingDatastore logs the access.
 		"""
@@ -423,7 +435,7 @@ class LoggingAdapter(Adapter):
 
 
 
-class KeyTransformAdapter(Adapter):
+class KeyTransformAdapter(Adapter[T_co, T_co], typing.Generic[T_co]):
 	"""Represents a simple DatastoreAdapter that applies a transform on all incoming
 	   keys. For example:
 
@@ -451,12 +463,12 @@ class KeyTransformAdapter(Adapter):
 		super().__init__(*args, **kwargs)
 	
 	
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Return the object named by keytransform(key)."""
 		return await super().get(self.keytransform(key))
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object names by keytransform(key)."""
 		await super().put(self.keytransform(key), value)
 	
@@ -478,7 +490,7 @@ class KeyTransformAdapter(Adapter):
 		return await super().query(query)
 
 
-class LowercaseKeyAdapter(KeyTransformAdapter):
+class LowercaseKeyAdapter(KeyTransformAdapter[T_co], typing.Generic[T_co]):
 	"""Represents a simple DatastoreAdapter that lowercases all incoming keys.
 	   For example:
 
@@ -513,7 +525,7 @@ class LowercaseKeyAdapter(KeyTransformAdapter):
 
 
 
-class NamespaceAdapter(KeyTransformAdapter):
+class NamespaceAdapter(KeyTransformAdapter[T_co], typing.Generic[T_co]):
 	"""Represents a simple DatastoreAdapter that namespaces all incoming keys.
 	   For example:
 
@@ -548,7 +560,7 @@ class NamespaceAdapter(KeyTransformAdapter):
 
 
 
-class NestedPathAdapter(KeyTransformAdapter):
+class NestedPathAdapter(KeyTransformAdapter[T_co], typing.Generic[T_co]):
 	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
 
 	Incoming keys are sharded into nested namespaces. The idea is to use the key
@@ -671,6 +683,7 @@ class DatastoreDirectoryMixin:
 		'baz'
 	"""
 
+	@typing.no_type_check
 	async def directory(self, dir_key: key_.Key, exist_ok: bool = False) -> bool:
 		"""Initializes directory at dir_key.
 		
@@ -684,7 +697,9 @@ class DatastoreDirectoryMixin:
 		except KeyError:
 			await self._put(dir_key, util.stream.ReceiveChannel([]))  #XXX: Or something like this…
 			return True
-
+	
+	
+	@typing.no_type_check
 	async def directory_read(self, dir_key: key_.Key) -> typing.AsyncIterable[key_.Key]:
 		"""Returns a generator that iterates over all keys in the directory
 		referenced by `dir_key`
@@ -696,6 +711,7 @@ class DatastoreDirectoryMixin:
 				yield key_.Key(dir_item)
 	
 	
+	@typing.no_type_check
 	async def directory_add(self, dir_key: key_.Key, key: key_.Key,
 	                        create: bool = False) -> None:
 		"""Adds directory entry `key` to directory at `dir_key`.
@@ -718,6 +734,7 @@ class DatastoreDirectoryMixin:
 			await self._put(dir_key, util.stream.WrapingReceiveChannel(dir_items))
 	
 	
+	@typing.no_type_check
 	async def directory_remove(self, dir_key: key_.Key, key: key_.Key,
 	                           missing_ok: bool = False) -> None:
 		"""Removes directory entry `key` from directory at `dir_key`.
@@ -742,7 +759,7 @@ class DatastoreDirectoryMixin:
 
 
 
-class DirectoryTreeAdapter(DatastoreDirectoryMixin, Adapter):
+class DirectoryTreeAdapter(DatastoreDirectoryMixin, Adapter[T_co, typing.Union[T_co, str]], typing.Generic[T_co]):
 	"""Datastore that tracks directory entries, like in a filesystem.
 	All key changes cause changes in a collection-like directory.
 
@@ -778,7 +795,7 @@ class DirectoryTreeAdapter(DatastoreDirectoryMixin, Adapter):
 	"""
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
 		   DirectoryTreeDatastore stores a directory entry.
 		"""
@@ -811,33 +828,42 @@ class DirectoryTreeAdapter(DatastoreDirectoryMixin, Adapter):
 
 
 
-class DatastoreCollectionMixin:
+class DatastoreCollectionMixin(typing.Generic[T_co]):
 	"""Represents a collection of datastores."""
 
-	def __init__(self, stores: typing.Collection[Datastore] = []):
+	def __init__(self, stores: typing.Collection[Datastore[T_co]] = []):
 		"""Initialize the datastore with any provided datastores."""
 		if not isinstance(stores, list):
 			stores = list(stores)
 		self._stores = stores
-
-	def get_datastore_at(self, index: int) -> Datastore:
+	
+	
+	@typing.no_type_check
+	def get_datastore_at(self, index: int) -> Datastore[T_co]:
 		"""Returns the datastore at `index`."""
 		return self._stores[index]
-
-	def append_datastore(self, store: Datastore) -> None:
+	
+	
+	@typing.no_type_check
+	def append_datastore(self, store: Datastore[T_co]) -> None:
 		"""Appends datastore `store` to this collection."""
 		self._stores.append(store)
-
-	def remove_datastore(self, store: Datastore) -> None:
+	
+	
+	@typing.no_type_check
+	def remove_datastore(self, store: Datastore[T_co]) -> None:
 		"""Removes datastore `store` from this collection."""
 		self._stores.remove(store)
-
-	def insert_datastore(self, index: int, store: Datastore) -> None:
+	
+	
+	@typing.no_type_check
+	def insert_datastore(self, index: int, store: Datastore[T_co]) -> None:
 		"""Inserts datastore `store` into this collection at `index`."""
 		self._stores.insert(index, store)
 
 
-class TieredAdapter(Adapter, DatastoreCollectionMixin):
+
+class TieredAdapter(Adapter[T_co, T_co], DatastoreCollectionMixin[T_co], typing.Generic[T_co]):
 	"""Represents a hierarchical collection of datastores.
 
 	Each datastore is queried in order. This is helpful to organize access
@@ -855,20 +881,18 @@ class TieredAdapter(Adapter, DatastoreCollectionMixin):
 		* query    : queries bottom (most complete) datastore
 	"""
 
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Return the object named by key. Checks each datastore in order."""
-		found = False
-		value = None
-		exceptions = []
+		value:      typing.Optional[util.stream.ReceiveChannel[T_co]] = None
+		exceptions: typing.List[KeyError] = []
 		for store in self._stores:
 			try:
 				value = await store.get(key)
-				found = True
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
 				break
-		if not found:
+		if value is None:
 			raise trio.MultiError(exceptions)
 		
 		# Add model to lower stores only
@@ -881,7 +905,7 @@ class TieredAdapter(Adapter, DatastoreCollectionMixin):
 		return value
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object in all underlying datastores."""
 		async with trio.open_nursery() as nursery:
 			for store in self._stores:
@@ -919,7 +943,7 @@ class TieredAdapter(Adapter, DatastoreCollectionMixin):
 
 
 
-class ShardedAdapter(Adapter, DatastoreCollectionMixin):
+class ShardedAdapter(Adapter[T_co, T_co], DatastoreCollectionMixin[T_co], typing.Generic[T_co]):
 	"""Represents a collection of datastore shards.
 	
 	A datastore is selected based on a sharding function.
@@ -932,7 +956,7 @@ class ShardedAdapter(Adapter, DatastoreCollectionMixin):
 	important for caches, it is crucial for persistent datastores.
 	"""
 	
-	def __init__(self, stores: typing.Collection[Datastore] = [],
+	def __init__(self, stores: typing.Collection[Datastore[T_co]] = [],
 	             shardingfn: typing.Callable[[key_.Key], int] = hash):
 		"""Initialize the datastore with any provided datastore."""
 		DatastoreCollectionMixin.__init__(self, stores)
@@ -949,12 +973,12 @@ class ShardedAdapter(Adapter, DatastoreCollectionMixin):
 		return self.get_datastore_at(self.shard(key))
 	
 	
-	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel:
+	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Return the object named by key from the corresponding datastore."""
 		return await self.get_sharded_datastore(key).get(key)
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object to the corresponding datastore."""
 		await self.get_sharded_datastore(key).put(key, value)
 	

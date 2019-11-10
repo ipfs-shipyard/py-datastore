@@ -6,11 +6,15 @@ import typing
 import trio.abc
 
 
+T    = typing.TypeVar("T")
+T_co = typing.TypeVar("T_co", covariant=True)
+
+
 ArbitraryReceiveChannel = typing.Union[
-	trio.abc.ReceiveChannel,
-	typing.AsyncIterable[object],
-	typing.Awaitable[object],
-	typing.Iterable[object]
+	trio.abc.ReceiveChannel[T_co],
+	typing.AsyncIterable[T_co],
+	typing.Awaitable[T_co],
+	typing.Iterable[T_co]
 ]
 
 
@@ -23,7 +27,7 @@ ArbitraryReceiveStream = typing.Union[
 ]
 
 
-class ReceiveChannel(trio.abc.ReceiveChannel):
+class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
 	"""A slightly extended version of `trio`'s standard interface for receiving object streams.
 	
 	Attributes
@@ -60,25 +64,25 @@ class ReceiveChannel(trio.abc.ReceiveChannel):
 		self.btime = None
 	
 	
-	async def collect(self) -> typing.List:
-		result: typing.List = []
+	async def collect(self) -> typing.List[T_co]:
+		result: typing.List[T_co] = []
 		async with self:
 			async for item in self:
 				result.append(item)
 		return result
 
 
-class WrapingReceiveChannel(ReceiveChannel):
+class WrapingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	"""Abstracts over various forms of synchronous and asynchronous returning of
 	   object streams
 	"""
 	
-	_source: typing.Union[typing.AsyncIterator, typing.Iterator]
+	_source: typing.Union[typing.AsyncIterator[T_co], typing.Iterator[T_co]]
 	
-	def __init__(self, source: ArbitraryReceiveChannel):
+	def __init__(self, source: ArbitraryReceiveChannel[T_co]):
 		super().__init__()
 		
-		source_val: typing.Union[typing.AsyncIterable, typing.Iterable]
+		source_val: typing.Union[typing.AsyncIterable[T_co], typing.Iterable[T_co]]
 		
 		# Handle special cases, so that we'll end up either with a synchronous
 		# or an asynchrous iterable (also tries to calculate the expected total
