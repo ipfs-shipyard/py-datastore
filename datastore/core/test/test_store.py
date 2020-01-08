@@ -1,15 +1,14 @@
 import importlib
 import logging
-import unittest
 from typing import Callable, List, Tuple, Type, TypeVar, Union, TYPE_CHECKING
 
 import pytest
 import trio.testing
 
-from datastore.core import BinaryDictDatastore, ObjectDictDatastore
-from datastore.core import BinaryNullDatastore, ObjectNullDatastore
-from datastore.core.key import Key
-from datastore.core.query import Query
+from datastore import BinaryDictDatastore, ObjectDictDatastore
+from datastore import BinaryNullDatastore, ObjectNullDatastore
+from datastore import Key
+from datastore import Query
 
 import datastore.adapter.logging
 
