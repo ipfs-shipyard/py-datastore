@@ -1,31 +1,26 @@
-import os
-import shutil
-import unittest
+import tempfile
+import os.path
 
-from datastore.core import serialize
-from datastore.core.test.test_basic import TestDatastore
+import pytest
+import trio.testing
+from datastore.core.test.conftest import DatastoreTests
 
 from datastore.filesystem import FileSystemDatastore
 
 
-class TestFileSystemDatastore(TestDatastore):
-	tmp = os.path.normpath('/tmp/datastore.test.fs')
-
-	def setUp(self):
-		if os.path.exists(self.tmp):
-			shutil.rmtree(self.tmp)
-
-	def tearDown(self):
-		if os.path.exists(self.tmp):
-			shutil.rmtree(self.tmp)
-
-	def test_datastore(self):
-		dirs = map(str, range(0, 4))
-		dirs = map(lambda d: os.path.join(self.tmp, d), dirs)
-		fses = map(FileSystemDatastore, dirs)
-		dses = list(map(serialize.shim, fses))
-		self.subtest_simple(dses, numelems=500)
+@pytest.fixture
+def temp_path():
+	with tempfile.TemporaryDirectory() as temp_path:
+		yield temp_path
 
 
-if __name__ == '__main__':
-	unittest.main()
+@trio.testing.trio_test
+async def test_datastore(temp_path):
+	dirs = map(str, range(0, 4))
+	dirs = map(lambda d: os.path.join(temp_path, d), dirs)
+	fses = list(map(FileSystemDatastore, dirs))
+	await DatastoreTests(fses).subtest_simple()
+	
+	# Check that all items were cleaned up
+	for fs in fses:
+		assert os.listdir(fs.root_path) == []
