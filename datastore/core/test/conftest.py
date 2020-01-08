@@ -60,11 +60,12 @@ class DatastoreTests(typing.Generic[DS]):
 	
 	async def subtest_insert_elems(self) -> None:
 		sn: DS
+		key: datastore.Key
 		value: int
 		
 		# insert numelems elems
 		for value in range(0, self.numelems):
-			key: datastore.Key = self.pkey.child(value)
+			key = self.pkey.child(value)
 			for sn in self.stores:
 				assert not await sn.contains(key)
 				await sn.put(key, self.encode(value))
@@ -75,7 +76,7 @@ class DatastoreTests(typing.Generic[DS]):
 		self.check_length(self.numelems)
 
 		for value in range(0, self.numelems):
-			key: datastore.Key = self.pkey.child(value)
+			key = self.pkey.child(value)
 			for sn in self.stores:
 				assert await sn.contains(key)
 				assert await sn.get_all(key) == self.encode(value)
@@ -86,7 +87,7 @@ class DatastoreTests(typing.Generic[DS]):
 	async def check_query(self, query, total, slice) -> datastore.Cursor:
 		assert not self.is_binary  # Queries are only supported for object stores
 		
-		allitems: List[int] = list(range(0, total))
+		allitems: typing.List[int] = list(range(0, total))
 		sn: datastore.ObjectDatastore
 		resultset: datastore.Cursor
 

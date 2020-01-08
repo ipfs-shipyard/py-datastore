@@ -1,8 +1,87 @@
+import errno
+import io
 import os
-from datastore.abc import BinaryDatastore
+import typing
+
+import trio
+
+import datastore
+import datastore.abc
+
+from .util import statx
 
 
-class FileSystemDatastore(BinaryDatastore):
+# Make default buffer larger to try to compensate for the thread switching overhead
+DEFAULT_BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE * 10
+
+
+stat_result_t = typing.Union[os.stat_result, statx.stat_result]
+
+
+class FileReader(datastore.abc.ReceiveStream):
+	__slots__ = ("_file")
+	
+	_file: 'trio._file_io.AsyncIOWrapper'
+	
+	
+	def __init__(self, file: 'trio._file_io.AsyncIOWrapper', stat: stat_result_t):
+		super().__init__()
+		
+		self._file = file
+		
+		self.size  = stat.st_size
+		self.atime = stat.st_atime
+		self.mtime = stat.st_mtime
+		if stat.st_atime_ns:
+			self.atime = stat.st_atime_ns / 1_000_000_000
+		if stat.st_mtime_ns:
+			self.mtime = stat.st_mtime_ns / 1_000_000_000
+		
+		# Finding btime from stat is tricky and platform dependant
+		st_birthtime_ns: typing.Optional[int] = getattr(stat, "st_birthtime_ns", None)
+		if st_birthtime_ns:
+			# Linux with statx patch exposes this
+			self.btime = st_birthtime_ns / 1_000_000_000
+		elif hasattr(stat, "st_birthtime") and stat.st_birthtime:
+			# FreeBSD/macOS has this field
+			self.btime = stat.st_birthtime
+		elif os.name == "nt":  # Windows stores btime as ctime
+			self.btime = stat.st_ctime
+			if stat.st_ctime_ns:
+				self.btime = stat.st_ctime_ns / 1_000_000_000
+	
+	
+	async def receive_some(self, max_bytes: typing.Optional[int] = None):
+		if max_bytes:
+			buf = await self._file.read(max_bytes)
+		else:
+			buf = await self._file.read(DEFAULT_BUFFER_SIZE)
+		
+		if len(buf) == 0:
+			await self.aclose()
+		
+		return buf
+	
+	
+	async def aclose(self) -> None:
+		await self._file.aclose()
+	
+	
+	@classmethod
+	async def from_path(cls, filepath: typing.Union[str, bytes, os.PathLike]):
+		# Open file
+		file = await trio.open_file(filepath, "rb")
+		try:
+			# Query file stat data
+			stat = await trio.run_sync_in_worker_thread(statx.stat, file.fileno(), cancellable=True)
+			
+			return cls(file, stat)
+		except BaseException:
+			await file.aclose()
+			raise
+
+
+class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	"""Simple flat-file datastore.
 
 	FileSystemDatastore will store objects in independent files in the host's
@@ -28,17 +107,7 @@ class FileSystemDatastore(BinaryDatastore):
 
 	Implementation Notes:
 
-		Separating key namespaces (and their parameters) within directories allows
-		granular querying for under a specific key. For example, a query with key::
-
-			Key('/data/Comedy:MontyPython/Sketch:CheeseShop')
-
-		will query for all objects under `Sketch:CheeseShop` independently of
-		queries for::
-
-			Key('/data/Comedy:MontyPython/Sketch')
-
-		Also, using the `.obj` extension gets around the ambiguity of having both a
+		Using the `.obj` extension gets around the ambiguity of having both a
 		`CheeseShop` object and directory::
 
 			/data/Comedy/MontyPython/Sketch/CheeseShop.obj
@@ -68,23 +137,26 @@ class FileSystemDatastore(BinaryDatastore):
 	def __init__(self, root, case_sensitive=True):
 		"""Initialize the datastore with given root directory `root`.
 
-		Args:
-		  root: A path at which to mount this filesystem datastore.
+		Arguments
+		---------
+		root
+			A path at which to mount this filesystem datastore.
 		"""
 		root = os.path.normpath(root)
 
 		if not root:
-			raise ValueError('root path must not be empty (\'.\' for current directory)')
+			raise ValueError('root path must not be empty (use \'.\' for current directory)')
 
 		os.makedirs(root, exist_ok=True)
 
 		self.object_extension = '.obj'
-		self.ignore_list = list()
 		self.root_path = root
 		self.case_sensitive = bool(case_sensitive)
-
+	
+	
 	# object paths
-
+	
+	
 	def relative_path(self, key):
 		"""Returns the relative path for given `key`"""
 		key = str(key)  # stringify
@@ -105,105 +177,137 @@ class FileSystemDatastore(BinaryDatastore):
 	def object_path(self, key):
 		"""return the object path for `key`."""
 		return os.path.join(self.root_path, self.relative_object_path(key))
-
-	# object IO
-
-	@staticmethod
-	def _write_object(path, value):
-		"""write out `object` to file at `path`"""
-		os.makedirs(os.path.dirname(path), exist_ok=True)
-
-		with open(path, 'w') as f:
-			f.write(value)
-
-	@staticmethod
-	def _read_object(path):
-		"""read in object from file at `path`"""
-		if not os.path.exists(path):
-			return None
-
-		if os.path.isdir(path):
-			raise RuntimeError('%s is a directory, not a file.' % path)
-
-		with open(path) as f:
-			file_contents = f.read()
-
-		return file_contents
-
-	@staticmethod
-	def _read_object_gen(iterable):
-		"""Generator that reads objects in from filenames in `iterable`."""
-		for filename in iterable:
-			yield FileSystemDatastore._read_object(filename)
-
+	
+	
 	# Datastore implementation
+	
+	
+	async def get(self, key: datastore.Key) -> datastore.abc.ReceiveStream:
+		"""Returns the data named by key, or raises KeyError otherwise.
+		
+		It is suggested to read larger chunks of the returned stream to reduce
+		the overhead for doing a context switch for each system call.
+		
+		Arguments
+		---------
+		key
+			Key naming the data to retrieve
 
-	def get(self, key):
-		"""Return the object named by key, or None, if it does not exist.
-
-		Args:
-		  key: Key naming the object to retrieve
-
-		Returns:
-		  object or None
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
+		RuntimeError
+			The given ``key`` names a subtree, not a value
 		"""
 		path = self.object_path(key)
-		return FileSystemDatastore._read_object(path)
+		try:
+			return await FileReader.from_path(path)
+		except FileNotFoundError as exc:
+			raise KeyError(key) from exc
+		except IsADirectoryError as exc:
+			# Should hopefully only happen if `object_extension` is `""`
+			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
+	
+	
+	async def get_all(self, key: datastore.Key) -> bytes:
+		"""Returns all the data named by `key` at once or raises `KeyError`
+		   otherwise
+		
+		This is an optimization over :meth:`get` for smaller files as it entails
+		only one context switch to open, read and close the file, rather then
+		several.
+		
+		Arguments
+		---------
+		key
+			Key naming the data to retrieve
 
-	def put(self, key, value):
-		"""Stores the object `value` named by `key`.
-
-		Args:
-		  key: Key naming `value`
-		  value: the object to store.
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
+		RuntimeError
+			The given ``key`` names a subtree, not a value
 		"""
-		path = self.object_path(key)
-		FileSystemDatastore._write_object(path, value)
-
-	def delete(self, key):
-		"""Removes the object named by `key`.
-
-		Args:
-		  key: Key naming the object to remove.
+		path = trio.Path(self.object_path(key))
+		try:
+			return await path.read_bytes()
+		except FileNotFoundError as exc:
+			raise KeyError(key) from exc
+		except IsADirectoryError as exc:
+			# Should hopefully only happen if `object_extension` is `""`
+			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
+	
+	
+	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveStream) -> None:
+		"""Stores or replaces the data named by `key` with `value`
+		
+		Arguments
+		---------
+		key
+			Key naming the binary data slot to store at
+		value
+			Some stream yielding the data to store
+		
+		Raises
+		------
+		RuntimeError
+			The given ``key`` names a subtree, not a value OR the contains a
+			value item as part of the key path
 		"""
-		path = self.object_path(key)
-		if os.path.exists(path):
-			os.remove(path)
+		path = trio.Path(self.object_path(key))
+		
+		# Ensure containing directory exists
+		parent = path.parent
+		try:
+			await parent.mkdir(parents=True, exist_ok=True)
+		except FileExistsError as exc:
+			# Should hopefully only happen if `object_extension` is `""`
+			raise RuntimeError(f"Key '{key}' requires containing directory "
+			                   f"'{parent}' to not be a value") from exc
+		
+		try:
+			async with await trio.open_file(path, "wb") as file:
+				chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+				while chunk:
+					await file.write(chunk)
+					
+					chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+		except IsADirectoryError as exc:
+			# Should only happen if `object_extension` is `""`
+			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
+	
 
-		# TODO: delete dirs if empty?
-
-	def query(self, query):
-		"""Returns an iterable of objects matching criteria expressed in `query`
-		FSDatastore.query queries all the `.obj` files within the directory
-		specified by the query.key.
-
-		Args:
-		  query: Query object describing the objects to return.
-
-		Returns:
-		  Cursor with all objects matching criteria
+	async def delete(self, key: datastore.Key):
+		"""Removes the data named by `key`
+		
+		Arguments
+		---------
+		key
+			Key naming the binary data slot to remove
+		
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
 		"""
-		path = self.path(query.key)
-
-		if os.path.exists(path):
-			filenames = os.listdir(path)
-			filenames = list(set(filenames) - set(self.ignore_list))
-			filenames = map(lambda f: os.path.join(path, f), filenames)
-			iterable = FileSystemDatastore._read_object_gen(filenames)
-		else:
-			iterable = list()
-
-		return query(iterable)  # must apply filters, etc naively.
-
-	def contains(self, key):
-		"""Returns whether the object named by `key` exists.
-		Optimized to only check whether the file object exists.
-
-		Args:
-		  key: Key naming the object to check.
-
-		Returns:
-		  boolean whether the object exists
-		"""
-		path = self.object_path(key)
-		return os.path.exists(path) and os.path.isfile(path)
+		path = trio.Path(self.object_path(key))
+		
+		try:
+			await path.unlink()
+		except FileNotFoundError as exc:
+			raise KeyError(key) from exc
+		
+		# Try to remove parent directories if they are empty
+		try:
+			parent = path.parent
+			while str(parent).startswith(self.root_path + os.path.sep) \
+			      and parent.parent != parent:
+				await parent.rmdir()
+				
+				parent = parent.parent
+		except OSError as exc:
+			if exc.errno == errno.ENOTEMPTY:
+				return
+			raise
