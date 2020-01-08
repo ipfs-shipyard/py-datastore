@@ -35,11 +35,11 @@ class DatastoreTests(typing.Generic[DS]):
 	
 	
 	def check_length(self, length: int) -> None:
-		try:
-			for sn in self.stores:
-				assert len(sn) == length
-		except TypeError:
-			pass
+		for sn in self.stores:
+			try:
+				assert len(sn) == length  # type: ignore[arg-type]
+			except TypeError:
+				pass
 	
 	
 	async def subtest_remove_nonexistent(self) -> None:
@@ -84,11 +84,12 @@ class DatastoreTests(typing.Generic[DS]):
 		self.check_length(self.numelems)
 	
 	
+	@typing.no_type_check  #FIXME: This method is broken
 	async def check_query(self, query, total, slice) -> datastore.Cursor:
 		assert not self.is_binary  # Queries are only supported for object stores
 		
 		allitems: typing.List[int] = list(range(0, total))
-		sn: datastore.ObjectDatastore
+		sn: datastore.abc.ObjectDatastore
 		resultset: datastore.Cursor
 
 		for sn in self.stores:
@@ -111,11 +112,12 @@ class DatastoreTests(typing.Generic[DS]):
 		return resultset
 	
 	
+	@typing.no_type_check  #FIXME: This method is broken
 	async def subtest_queries(self) -> None:
 		if self.is_binary:
 			return  # Not supported on binary datastores
 		
-		sn: datastore.ObjectDatastore
+		sn: datastore.abc.ObjectDatastore
 		value: int
 		
 		for value in range(0, self.numelems):
