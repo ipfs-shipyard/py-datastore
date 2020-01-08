@@ -46,7 +46,7 @@ class ObjectDirectorySupport:
 		try:
 			await (await super().get(dir_key)).aclose()
 		except KeyError:
-			await super()._put(dir_key, datastore.receive_channel_from([]))
+			await super()._put(dir_key, datastore.util.receive_channel_from([]))
 			return True
 		else:
 			if not exist_ok:
@@ -86,7 +86,7 @@ class ObjectDirectorySupport:
 		
 		if key_str not in dir_items:
 			dir_items.append(key_str)
-			await super()._put(dir_key, datastore.receive_channel_from(dir_items))
+			await super()._put(dir_key, datastore.util.receive_channel_from(dir_items))
 	
 	
 	@typing.no_type_check
@@ -112,7 +112,7 @@ class ObjectDirectorySupport:
 			if not missing_ok:
 				raise KeyError(f"{key} in {dir_key}") from None
 		else:
-			await super()._put(dir_key, datastore.receive_channel_from(dir_items))
+			await super()._put(dir_key, datastore.util.receive_channel_from(dir_items))
 
 
 
