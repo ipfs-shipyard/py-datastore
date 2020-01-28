@@ -1,6 +1,7 @@
 import errno
 import io
 import os
+import pathlib
 import typing
 
 import trio
@@ -134,49 +135,65 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 
 	"""
 
-	def __init__(self, root, case_sensitive=True):
+	case_sensitive: bool
+	object_extension: str
+	remove_empty: bool
+	root_path: pathlib.PurePath
+
+	def __init__(self, root: typing.Union[os.PathLike, str], *,
+	             case_sensitive: bool = True, remove_empty: bool = True):
 		"""Initialize the datastore with given root directory `root`.
 
 		Arguments
 		---------
 		root
 			A path at which to mount this filesystem datastore.
+		case_sensitive
+			Keep case of all path items (True) or lower case them (False)
+			before passing them to the OS. Note that, if the underlying
+			file system is case-insensitive this option will not prevent
+			conflicts between paths that differ in case only.
+		remove_empty
+			Attempt to remove empty directories in the underlying file
+			system. While this is enabled every successful delete operation
+			will be followed by at least one extra context switch to invoke
+			the `rmdir` system call.
 		"""
-		root = os.path.normpath(root)
-
 		if not root:
 			raise ValueError('root path must not be empty (use \'.\' for current directory)')
-
-		os.makedirs(root, exist_ok=True)
+		
+		root = pathlib.Path(root)
+		root.mkdir(parents=True, exist_ok=True)
 
 		self.object_extension = '.obj'
 		self.root_path = root
 		self.case_sensitive = bool(case_sensitive)
+		self.remove_empty = bool(remove_empty)
 	
 	
 	# object paths
 	
 	
-	def relative_path(self, key):
+	def relative_path(self, key: datastore.Key) -> pathlib.PurePath:
 		"""Returns the relative path for given `key`"""
-		key = str(key)  # stringify
-		key = key.replace(':', '/')  # turn namespace delimiters into slashes
-		key = key[1:]  # remove first slash (absolute)
+		skey = str(key)  # stringify
+		skey = skey.replace(':', '/')  # turn namespace delimiters into slashes
+		skey = skey[1:]  # remove first slash (absolute)
 		if not self.case_sensitive:
-			key = key.lower()  # coerce to lowercase
-		return os.path.normpath(key)
+			skey = skey.lower()  # coerce to lowercase
+		return pathlib.PurePath(skey)
 
-	def path(self, key):
+	def path(self, key: datastore.Key) -> pathlib.PurePath:
 		"""Returns the `path` for given `key`"""
-		return os.path.join(self.root_path, self.relative_path(key))
+		return self.root_path / self.relative_path(key)
 
-	def relative_object_path(self, key):
+	def relative_object_path(self, key: datastore.Key) -> pathlib.PurePath:
 		"""Returns the relative path for object pointed by `key`."""
-		return self.relative_path(key) + self.object_extension
+		return self.relative_path(key).with_suffix(self.object_extension)
 
-	def object_path(self, key):
+	def object_path(self, key: datastore.Key):
 		"""return the object path for `key`."""
-		return os.path.join(self.root_path, self.relative_object_path(key))
+		return self.root_path / self.relative_object_path(key)
 	
 	
 	# Datastore implementation
@@ -300,9 +317,21 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			raise KeyError(key) from exc
 		
 		# Try to remove parent directories if they are empty
+		if not self.remove_empty:
+			return
 		try:
 			parent = path.parent
-			while str(parent).startswith(self.root_path + os.path.sep) \
+			# Attempt to remove all parent directories as long as the
+			# parent directory is:
+			#  * … a sub-directory of `self.root_path` – checking whether
+			#    the path of that directory starts with `{self.root_path}/`.
+			#  * … not the same directory again – to ensure that pathlib's
+			#    special `Path(".").parent == Path(".")` behaviour doesn't
+			#    bite us. (This check may be unecessary / overly pendantic…)
+			# The loop is stopped when we either reach the root directory
+			# or receive an `ENOTEMPTY` error indicating that we tried to
+			# remove a directory that wasn't actually empty.
+			while str(parent).startswith(str(self.root_path) + os.path.sep) \
 			      and parent.parent != parent:
 				await parent.rmdir()
 				
