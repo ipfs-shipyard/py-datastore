@@ -1,7 +1,6 @@
 import typing
 
 import datastore
-import trio
 
 from . import _support
 from ._support import DS, RT
@@ -89,5 +88,10 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 				if shard_query.limit <= 0:
 					break  # we're already done!
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+
+class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
+	...
+
+
+class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
+	...

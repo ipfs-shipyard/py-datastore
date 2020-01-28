@@ -347,7 +347,6 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		"""Initializes this DatastoreAdapter with child `datastore`."""
 		self.child_datastore = datastore
 	
-	
 	# default implementation just passes all calls to child
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Returns the object named by `key` or raises `KeyError` if it does

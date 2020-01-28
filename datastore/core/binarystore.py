@@ -294,7 +294,6 @@ class Adapter(Datastore):
 		"""Initializes this DatastoreAdapter with child `datastore`."""
 		self.child_datastore = datastore
 	
-	
 	# default implementation just passes all calls to child
 	async def get(self, key: key_.Key) -> util.stream.ReceiveStream:
 		"""Returns the object named by `key` or raises `KeyError` if it does
@@ -312,6 +311,7 @@ class Adapter(Datastore):
 		key
 			Key naming the object to retrieve
 		"""
+		
 		return await self.child_datastore.get(key)
 	
 	

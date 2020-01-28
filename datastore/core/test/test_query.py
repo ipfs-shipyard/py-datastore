@@ -426,7 +426,6 @@ class TestQuery(unittest.TestCase):
 
 		t1 = v1['committed']
 		t2 = v2['committed']
-		t3 = v3['committed']
 
 		self.subtest_cursor(Query(k), vs, vs)
 		self.subtest_cursor(Query(k, limit=2), vs, [v1, v2])

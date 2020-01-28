@@ -6,6 +6,7 @@ import typing
 import trio.abc
 
 
+
 T    = typing.TypeVar("T")
 T_co = typing.TypeVar("T_co", covariant=True)
 U_co = typing.TypeVar("U_co", covariant=True)
@@ -140,14 +141,16 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	
 	
 	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], T], *args) -> T:
-		async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+		async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug # noqa: F821
 			send_channel, receive_channel = trio.open_memory_channel(self._shared.bufsize)
 			result = await self._shared.nursery.start(func, receive_channel, *args)
 			self._shared.channels.append(send_channel)
 		return result
 	
 	
-	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], typing.Any], *args) -> None:
+	def start_task_soon(
+			self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], typing.Any], *args
+	) -> None:
 		# Doing this sync is just wrong, but we cannot block in this function…
 		self._shared.lock.acquire_nowait()
 		
@@ -183,7 +186,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		
 		try:
 			# Pass received value (or EOF) to waiting write tasks
-			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+			async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug # noqa: F821
 				try:
 					value = await self._shared.source.receive()
 					for channel in self._shared.channels:
@@ -332,7 +335,7 @@ class _WrapingIterReceiveChannelBase(ReceiveChannel[T_co], typing.Generic[T_co, 
 			raise trio.EndOfChannel()
 		
 		try:
-			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
+			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug # noqa: F821
 				return await self._receive()
 		except trio.BrokenResourceError:
 			await self.aclose(_mark_closed=True)
@@ -482,7 +485,7 @@ def receive_channel_from(channel: ArbitraryReceiveChannel[T_co]) -> ReceiveChann
 		
 		if isinstance(channel, collections.abc.Awaitable):
 			async def await_iter_wrapper(channel: typing.Awaitable[T_co]) \
-					-> typing.AsyncIterable[T_co]:
+			      -> typing.AsyncIterable[T_co]:
 				yield await channel
 			source1 = await_iter_wrapper(channel)
 		else:
@@ -605,7 +608,9 @@ class TeeingReceiveStream(ReceiveStream):
 		return result
 	
 	
-	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveStream], typing.Any], *args) -> None:
+	def start_task_soon(
+			self, func: typing.Callable[[trio.abc.ReceiveStream], typing.Any], *args
+	) -> None:
 		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
 		self._nursery.start_soon(func, receive_stream_from(receive_channel), *args)
 		self._channels.append(send_channel)
@@ -628,7 +633,7 @@ class TeeingReceiveStream(ReceiveStream):
 				for channel in self._channels:
 					await channel.aclose()
 				self._channels.clear()
-			
+
 				# Ensure that our slaves have finished before the final value
 				# is returned
 				await self.aclose(_mark_closed=False)
@@ -811,7 +816,7 @@ class _WrapingAsyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.AsyncI
 	
 	async def _close_source(self) -> None:
 		try:
-			await self._source.aclose()  # type: ignore[union-attr]  # We catch errors instead
+			await self._source.aclose()  # type: ignore  # We catch errors instead
 		except AttributeError:
 			pass
 
@@ -839,7 +844,8 @@ class _WrapingSyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.Iterato
 	
 	async def _close_source(self) -> None:
 		try:
-			self._source.close()  # type: ignore[union-attr]  # We catch errors instead
+			# We catch errors instead
+			self._source.close()  # type: ignore[union-attr] # noqa: F821
 		except AttributeError:
 			pass
 
@@ -864,7 +870,7 @@ def receive_stream_from(stream: ArbitraryReceiveStream) -> ReceiveStream:
 		# Wrap awaitables of bytes in an asynchronous iterable that yields once
 		if isinstance(stream, collections.abc.Awaitable):
 			async def await_iter_wrapper(stream: typing.Awaitable[bytes]) \
-					-> typing.AsyncIterable[bytes]:
+			      -> typing.AsyncIterable[bytes]:
 				yield await stream
 			source1 = await_iter_wrapper(stream)
 		else:

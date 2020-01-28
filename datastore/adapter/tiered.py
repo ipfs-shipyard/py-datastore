@@ -49,7 +49,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				value_: RT = await store.get(key)  # type: ignore[assignment]
+				value_: RT = await store.get(key)  # type: ignore[assigment] # noqa: F821
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
@@ -91,6 +91,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object from all underlying datastores."""
 		error_count = 0
+
 		async def count_key_errors(coroutine):
 			nonlocal error_count
 			try:
@@ -127,5 +128,9 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		return False
 
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
+	...
+
+
+class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
+	...

@@ -10,6 +10,7 @@ from datastore import BinaryNullDatastore, ObjectNullDatastore
 from datastore import Key
 from datastore import Query
 
+import datastore.adapter.directory
 import datastore.adapter.logging
 
 
@@ -17,18 +18,18 @@ T_co = TypeVar("T_co", covariant=True)
 
 
 def get_all_type_args(adapter: str, subname: str = "") \
-		-> Tuple[str, Tuple[
-			Tuple[
-				Type[datastore.abc.BinaryAdapter],
-				Type[Union[BinaryDictDatastore, ObjectDictDatastore]],
-				Callable[[T_co], bytes]
-			],
-			Tuple[
-				Type[datastore.abc.ObjectAdapter],
-				Type[ObjectDictDatastore],
-				Callable[[T_co], List[T_co]]
-			]
-		]]:
+    -> Tuple[str, Tuple[
+        Tuple[
+            Type[datastore.abc.BinaryAdapter],
+            Type[Union[BinaryDictDatastore, ObjectDictDatastore]],
+            Callable[[T_co], bytes]
+        ],
+        Tuple[
+            Type[datastore.abc.ObjectAdapter],
+            Type[ObjectDictDatastore],
+            Callable[[T_co], List[T_co]]
+        ]
+    ]]:
 	mod = importlib.import_module(f"datastore.adapter.{adapter}")
 	
 	def encode_bin(value: T_co) -> bytes:
@@ -62,7 +63,7 @@ async def test_null(NullDatastore):
 		
 		assert not await s.contains(k)
 		with pytest.raises(KeyError):
-			await s.get(k) 
+			await s.get(k)
 
 	for item in await s.query(Query(Key('/'))):
 		raise Exception('Should not have found anything.')
@@ -89,12 +90,23 @@ _Logger = logging.Logger
 if not TYPE_CHECKING:
 	_Loger = logging.getLoggerClass()
 
+
 class NullLogger(_Logger):
-		def debug(self, *args, **kwargs): pass
-		def info(self, *args, **kwargs): pass
-		def warning(self, *args, **kwargs): pass
-		def error(self, *args, **kwargs): pass
-		def critical(self, *args, **kwargs): pass
+	def debug(self, *args, **kwargs):
+		pass
+
+	def info(self, *args, **kwargs):
+		pass
+
+	def warning(self, *args, **kwargs):
+		pass
+
+	def error(self, *args, **kwargs):
+		pass
+
+	def critical(self, *args, **kwargs):
+		pass
+
 
 
 @pytest.mark.parametrize(*get_all_type_args("logging"))
@@ -105,11 +117,10 @@ async def test_logging_simple(DatastoreTests, Adapter, DictDatastore, encode_fn)
 	await DatastoreTests([s1, s2]).subtest_simple()
 
 
-
-
 #########################
 # keytransform.*Adapter #
 #########################
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform"))
 @trio.testing.trio_test
@@ -120,6 +131,7 @@ async def test_keytransform_simple(DatastoreTests, Adapter, DictDatastore, encod
 	stores = [s1, s2, s3]
 
 	await DatastoreTests(stores).subtest_simple()
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform"))
 @trio.testing.trio_test
@@ -161,6 +173,7 @@ async def test_keytransform_reverse_transform(Adapter, DictDatastore, encode_fn)
 	assert not await kt.contains(k1)
 	assert not await kt.contains(k2)
 
+
 @pytest.mark.parametrize(*get_all_type_args("keytransform"))
 @trio.testing.trio_test
 async def test_keytransform_lowercase_transform(Adapter, DictDatastore, encode_fn):
@@ -196,7 +209,6 @@ async def test_keytransform_lowercase_transform(Adapter, DictDatastore, encode_f
 	await test(k3, encode_fn('c'))
 
 
-
 #####################################
 # keytransform.*LowercaseKeyAdapter #
 #####################################
@@ -211,6 +223,7 @@ async def test_lowercase_key_simple(DatastoreTests, Adapter, DictDatastore, enco
 	stores = [s1, s2, s3]
 	
 	await DatastoreTests(stores).subtest_simple()
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "LowercaseKey"))
 @trio.testing.trio_test
@@ -244,10 +257,10 @@ async def test_lowercase_key(Adapter, DictDatastore, encode_fn):
 	await test(k3, encode_fn('c'))
 
 
-
 ##################################
 # keytransform.*NamespaceAdapter #
 ##################################
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "Namespace"))
 @trio.testing.trio_test
@@ -258,6 +271,7 @@ async def test_namespace_simple(DatastoreTests, Adapter, DictDatastore, encode_f
 	stores = [s1, s2, s3]
 
 	await DatastoreTests(stores).subtest_simple()
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "Namespace"))
 @trio.testing.trio_test
@@ -291,10 +305,10 @@ async def test_namespace(Adapter, DictDatastore, encode_fn):
 		await test(Key(str(i)), encode_fn(f"val{i}"))
 
 
-
 ###################################
 # keytransform.*NestedPathAdapter #
 ###################################
+
 
 async def subtest_nested_path_ds(Adapter, DictDatastore, encode_fn, **kwargs):
 	k1 = kwargs.pop('k1')
@@ -377,6 +391,7 @@ async def subtest_nested_path_ds(Adapter, DictDatastore, encode_fn, **kwargs):
 	assert not await np.contains(k3)
 	assert not await np.contains(k4)
 
+
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "NestedPath"))
 @trio.testing.trio_test
 async def test_nested_path_simple(DatastoreTests, Adapter, DictDatastore, encode_fn):
@@ -387,6 +402,7 @@ async def test_nested_path_simple(DatastoreTests, Adapter, DictDatastore, encode
 	stores = [s1, s2, s3, s4]
 
 	await DatastoreTests(stores).subtest_simple()
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "NestedPath"))
 def test_nested_path_gen(Adapter, DictDatastore, encode_fn):
@@ -399,6 +415,7 @@ def test_nested_path_gen(Adapter, DictDatastore, encode_fn):
 	test(3, 4, 'abcd/efgh/ijk')
 	test(1, 4, 'abcd')
 	test(3, 10, 'abcdefghij/k')
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "NestedPath"))
 @trio.testing.trio_test
@@ -413,6 +430,7 @@ async def test_nested_path_3_2(Adapter, DictDatastore, encode_fn):
 
 	await subtest_nested_path_ds(Adapter, DictDatastore, encode_fn, **opts)
 
+
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "NestedPath"))
 @trio.testing.trio_test
 async def test_nested_path_5_3(Adapter, DictDatastore, encode_fn):
@@ -425,6 +443,7 @@ async def test_nested_path_5_3(Adapter, DictDatastore, encode_fn):
 	opts['length'] = 3
 
 	await subtest_nested_path_ds(Adapter, DictDatastore, encode_fn, **opts)
+
 
 @pytest.mark.parametrize(*get_all_type_args("keytransform", "NestedPath"))
 @trio.testing.trio_test
@@ -441,12 +460,9 @@ async def test_nested_path_keyfn(Adapter, DictDatastore, encode_fn):
 	await subtest_nested_path_ds(Adapter, DictDatastore, encode_fn, **opts)
 
 
-
 ####################################
 # directory.ObjectDirectorySupport #
 ####################################
-
-import datastore.adapter.directory
 
 
 class ObjectDirectoryDictDatastore(
@@ -461,6 +477,7 @@ async def test_directory_simple(DatastoreTests):
 	s1 = ObjectDirectoryDictDatastore()
 	s2 = ObjectDirectoryDictDatastore()
 	await DatastoreTests([s1, s2]).subtest_simple()
+
 
 @trio.testing.trio_test
 async def test_directory_init():
@@ -482,6 +499,7 @@ async def test_directory_init():
 		await ds.directory(dir_key, exist_ok=False)
 	await ds.directory(dir_key, exist_ok=True)
 	assert await ds.get_all(dir_key) == [str(bar_key)]
+
 
 @trio.testing.trio_test
 async def test_directory_basic():
@@ -513,6 +531,7 @@ async def test_directory_basic():
 		gen = ds.directory_read(dir_key).__aiter__()
 		await gen.__anext__()
 
+
 @trio.testing.trio_test
 async def test_directory_double_add():
 	ds = ObjectDirectoryDictDatastore()
@@ -533,6 +552,7 @@ async def test_directory_double_add():
 
 	keys = [key async for key in ds.directory_read(dir_key)]
 	assert keys == [bar_key, baz_key]
+
 
 @trio.testing.trio_test
 async def test_directory_remove():
@@ -559,12 +579,10 @@ async def test_directory_remove():
 	assert keys == [baz_key]
 
 
-
 #############################
 # directory.ObjectDatastore #
 #############################
 
-import datastore.adapter.directory
 
 @trio.testing.trio_test
 async def test_dir_simple(DatastoreTests):
@@ -651,9 +669,14 @@ async def test_sharded(DatastoreTests, Adapter, DictDatastore, encode_fn):
 	s4 = DictDatastore()
 	s5 = DictDatastore()
 	stores = [s1, s2, s3, s4, s5]
-	hash = lambda key: int(key.name) * len(stores) // numelems
+
+	def hash(key):
+		return int(key.name) * len(stores) // numelems
+
 	sharded = Adapter(stores, sharding_fn=hash)
-	sumlens = lambda stores: sum(map(lambda s: len(s), stores))
+
+	def sumlens(stores):
+		return sum(map(lambda s: len(s), stores))
 
 	async def checkFor(key, value, sharded, shard=None):
 		correct_shard = sharded._stores[hash(key) % len(sharded._stores)]

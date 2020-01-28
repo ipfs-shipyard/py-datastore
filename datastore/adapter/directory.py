@@ -1,7 +1,6 @@
 import typing
 
 import datastore
-import trio
 
 
 __all__ = ["ObjectDirectorySupport", "ObjectDatastore"]

@@ -88,8 +88,13 @@ class _Adapter(typing.Generic[DS]):
 		query.key = self.key_transform_fn(query.key)
 		return await super().query(query)
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+
+class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
+	...
+
+
+class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
+	...
 
 
 
@@ -126,8 +131,13 @@ class _LowercaseKeyAdapter(_Adapter[DS], typing.Generic[DS]):
 		"""Returns a lowercased `key`."""
 		return datastore.Key(str(key).lower())
 
-class BinaryLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+
+class BinaryLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
+	...
+
+
+class ObjectLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
+	...
 
 
 
@@ -165,8 +175,13 @@ class _NamespaceAdapter(_Adapter[DS], typing.Generic[DS]):
 		"""Returns a namespaced `key`: namespace.child(key)."""
 		return self.namespace.child(key)
 
-class BinaryNamespaceAdapter(_NamespaceAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectNamespaceAdapter(_NamespaceAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+
+class BinaryNamespaceAdapter(_NamespaceAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
+	...
+
+
+class ObjectNamespaceAdapter(_NamespaceAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
+	...
 
 
 
@@ -222,7 +237,7 @@ class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
 		"""
 
 		# assign the nesting variables
-		self.nest_depth  = depth  if depth  is not None else self._default_depth
+		self.nest_depth  = depth if depth is not None else self._default_depth
 		self.nest_length = length if length is not None else self._default_length
 		self.nest_keyfn  = key_fn if key_fn is not None else self._default_keyfn
 
@@ -268,5 +283,10 @@ class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
 		components = components[:depth]
 		return '/'.join(components)
 
-class BinaryNestedPathAdapter(_NestedPathAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter): ...
-class ObjectNestedPathAdapter(_NestedPathAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter): ...
+
+class BinaryNestedPathAdapter(_NestedPathAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
+	...
+
+
+class ObjectNestedPathAdapter(_NestedPathAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
+	...
