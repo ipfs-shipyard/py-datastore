@@ -6,18 +6,19 @@ import datastore
 
 
 DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
+Query = typing.Any
 
 
 @pytest.fixture(name="DatastoreTests")
 def return_datastore_tests():
 	return DatastoreTests
 
+
 class DatastoreTests(typing.Generic[DS]):
 	pkey: datastore.Key = datastore.Key('/dfadasfdsafdas/')
 	stores: typing.List[DS]
 	numelems: int
 	is_binary: bool
-	
 	
 	#FIXME: For some reason `numelems` increases test runtime with at least n²
 	def __init__(self, stores: typing.List[DS], numelems: int = 10):  # 1000):
@@ -37,7 +38,7 @@ class DatastoreTests(typing.Generic[DS]):
 	def check_length(self, length: int) -> None:
 		for sn in self.stores:
 			try:
-				assert len(sn) == length  # type: ignore[arg-type]
+				assert len(sn) == length  # type: ignore
 			except TypeError:
 				pass
 	

@@ -3,7 +3,7 @@ import typing
 
 from . import binarystore
 from . import objectstore
-from . import key   as key_
+from . import key as key_
 from . import query as query_
 class util:  # noqa
 	from .util import stream
@@ -19,8 +19,8 @@ class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
 	"""Serializing protocol. Serialized data must be a string."""
 
 	__slots__ = ()
-	
-		
+
+
 	@abc.abstractmethod
 	def loads(self, value: bytes) -> typing.List[T_co]:
 		"""returns deserialized `value`."""

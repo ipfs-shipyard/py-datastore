@@ -4,7 +4,7 @@ import datastore
 
 
 #XXX: Maybe retry describing this cooperative multiple inheritance scheme if these are ever added:
-#  
+#
 #  * https://github.com/python/mypy/issues/7191 (Mixin classes in general)
 #  * https://github.com/python/mypy/issues/7790 (Associated types)
 #  * https://github.com/python/mypy/issues/7791 (Types of generic classes)
@@ -18,9 +18,11 @@ RT = typing.TypeVar("RT", datastore.abc.ReceiveStream,   datastore.abc.ReceiveCh
 # Source: https://github.com/python/mypy/issues/708#issuecomment-405812141
 T = typing.TypeVar("T")
 
+
 class FunctionProperty(typing.Generic[T]):
     def __get__(self, oself: typing.Any, owner: typing.Any) -> T:
         ...
+
     def __set__(self, oself: typing.Any, value: T) -> None:
         ...
 
