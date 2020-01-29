@@ -58,7 +58,7 @@ From source:
 ### Datastore Implementations
 
 Only the filesystem and the in-memory `DictDatastore` are included in this project.
-For other known implementation please see the links below.
+For other known implementations please see the links below.
 
 NOTE: Struck through entries are not compatible with the latest py-datastore releases!
 
