@@ -14,7 +14,35 @@ class util:  # noqa
 T_co = typing.TypeVar("T_co", covariant=True)
 
 
-#FIXME: This stuff should support streaming data to the maximum extent possible
+class SerializingError(ValueError):
+	"""Base class for all encoding and decoding related errors."""
+
+	def __init__(self, message, encoder_name):
+		self.encoder_name = encoder_name
+
+		super().__init__(message)
+
+
+class SerializeError(SerializingError):
+	"""Raised when encoding a Python object into a byte string has failed
+	due to some problem with the input data."""
+
+	def __init__(self, encoder_name, original):
+		self.original = original
+
+		msg = "Object serialization error: {}".format(original)
+		super().__init__(msg, encoder_name)
+
+
+class ParseError(SerializingError):
+	"""Raised when decoding a byte string to a Python object has failed due to
+	some problem with the input data."""
+
+	def __init__(self, encoder_name, original):
+		self.original = original
+
+		msg = "Object parsing error: {}".format(original)
+		super().__init__(msg, encoder_name)
 
 
 class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
@@ -24,13 +52,15 @@ class Serializer(typing.Generic[T_co], metaclass=abc.ABCMeta):
 
 
 	@abc.abstractmethod
-	def loads(self, value: bytes) -> typing.List[T_co]:
+	def parse(self, value: util.stream.ReceiveStream) \
+	    -> util.stream.ArbitraryReceiveChannel[T_co]:
 		"""returns deserialized `value`."""
 		pass
 
 	
 	@abc.abstractmethod
-	def dumps(self, value: typing.List[T_co]) -> bytes:
+	def serialize(self, value: util.stream.ReceiveChannel[T_co]) \
+	    -> util.stream.ArbitraryReceiveStream:
 		"""returns serialized `value`."""
 		pass
 
@@ -87,8 +117,8 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		key
 			Key naming the object to retrieve
 		"""
-		value = await (await self.child_datastore.get(key)).collect()  #FIXME
-		return util.stream.receive_channel_from(self.serializer.loads(value))
+		value = await self.child_datastore.get(key)
+		return util.stream.receive_channel_from(self.serializer.parse(value))
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
@@ -104,8 +134,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		value
 			The object to store.
 		"""
-		value_items = await value.collect()  #FIXME
-		value_bytes = self.serializer.dumps(value_items)
+		value_bytes = self.serializer.serialize(value)
 		await self.child_datastore.put(key, value_bytes)
 
 	
@@ -130,7 +159,10 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		result = cursor._iterable
 		cursor._iterable = []
 		for field in result:
-			cursor._iterable.extend(self.serializer.loads(field))
+			field_stream = util.stream.receive_stream_from(field)
+			parse_items = util.stream.receive_channel_from(self.serializer.parse(field_stream))
+			async for item in parse_items:
+				cursor._iterable.append(item)
 
 		return cursor
 	

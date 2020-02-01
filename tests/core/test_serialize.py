@@ -1,3 +1,5 @@
+import functools
+
 import pytest
 import trio.testing
 
@@ -5,38 +7,50 @@ import datastore
 import datastore.serializer.json
 import datastore.serializer.pickle
 
-
-def implements_serializer_interface(cls):
-	return hasattr(cls, 'loads') and callable(cls.loads) \
-	       and hasattr(cls, 'dumps') and callable(cls.dumps)
-
-
-def test_basic(DatastoreTests):
-	serializer = datastore.serializer.json.Serializer()
-	
-	values_orig = [{"value": i} for i in range(0, 1000)]
-	values_json = [serializer.dumps([item]) for item in values_orig]
-	
-	# test generators
-	values_serialized = [serializer.dumps([item]) for item in values_orig]
-	values_deserialized = [serializer.loads(item)[0] for item in values_serialized]
-	assert values_serialized == values_json
-	assert values_deserialized == values_orig
+SERIALIZERS = [
+	datastore.serializer.json.Serializer,
+	datastore.serializer.json.PrettySerializer,
+	datastore.serializer.pickle.Serializer,
+	functools.partial(datastore.serializer.pickle.Serializer, protocol=2),
+	functools.partial(datastore.serializer.pickle.Serializer, protocol=0),
+]
 
 
-async def subtest_serializer_shim(serializer=None, numelems=100):
-	child = datastore.BinaryDictDatastore()
-	shim = datastore.SerializerAdapter(child, serializer=serializer)
+@pytest.mark.parametrize("Serializer", SERIALIZERS)
+@trio.testing.trio_test
+async def test_serializer_basic(Serializer, numelems=1000):
+	serializer = Serializer()
 	
 	values_raw = [{"value": i} for i in range(0, numelems)]
 	
-	values_serial = [serializer.dumps([v]) for v in values_raw]
-	values_deserial = [serializer.loads(v)[0] for v in values_serial]
-	assert values_deserial == values_raw
+	values_serial = []
+	async for chunk in serializer.serialize(datastore.util.receive_channel_from(values_raw)):
+		values_serial.append(chunk)
 	
+	values_deserial_1 = []
+	async for value in serializer.parse(datastore.util.receive_stream_from(values_serial)):
+		values_deserial_1.append(value)
+	
+	values_deserial_2 = []
+	async for value in serializer.parse(datastore.util.receive_stream_from(b"".join(values_serial))):
+		values_deserial_2.append(value)
+	
+	assert values_deserial_1 == values_deserial_2 == values_raw
+
+
+@pytest.mark.parametrize("Serializer", SERIALIZERS)
+@trio.testing.trio_test
+async def test_serializer_shim(Serializer, numelems=100):
+	child = datastore.BinaryDictDatastore()
+	shim = datastore.SerializerAdapter(child, serializer=Serializer())
+	
+	values_raw = [{"value": i} for i in range(0, numelems)]
+
 	for value in values_raw:
 		key = datastore.Key(value["value"])
-		value_serialized = serializer.dumps([value])
+		value_serialized = b""
+		async for chunk in shim.serializer.serialize(datastore.util.receive_channel_from([value])):
+			value_serialized += chunk
 		
 		# should not be there yet
 		assert not await shim.contains(key)
@@ -66,54 +80,3 @@ async def subtest_serializer_shim(serializer=None, numelems=100):
 		assert not await shim.contains(key)
 		with pytest.raises(KeyError):
 			await shim.get_all(key)
-
-
-@trio.testing.trio_test
-async def test_serializer_shim():
-	#XXX: Testing directly with the `json` module is not going to work as that
-	#     module expects input strings to be text, rather then binary
-	await subtest_serializer_shim(datastore.serializer.json.Serializer())
-	await subtest_serializer_shim(datastore.serializer.json.PrettySerializer())
-	await subtest_serializer_shim(datastore.serializer.pickle.Serializer())
-
-
-def test_interface_check_returns_true_for_valid_serializers():
-	class S(object):
-		def loads(self, foo):
-			return foo
-
-		def dumps(self, foo):
-			return foo
-
-	assert implements_serializer_interface(S)
-	assert implements_serializer_interface(datastore.serializer.json.Serializer())
-	assert implements_serializer_interface(datastore.serializer.json.PrettySerializer())
-	assert implements_serializer_interface(datastore.serializer.pickle.Serializer())
-	assert implements_serializer_interface(datastore.abc.Serializer)
-
-
-def test_interface_check_returns_false_for_invalid_serializers():
-	class S1(object):
-		pass
-
-	class S2(object):
-		def loads(self, foo):
-			return foo
-
-	class S3(object):
-		def dumps(self, foo):
-			return foo
-
-	class S4(object):
-		def dumps(self, foo):
-			return foo
-
-	class S5(object):
-		loads = 'loads'
-		dumps = 'dumps'
-
-	assert not implements_serializer_interface(S1)
-	assert not implements_serializer_interface(S2)
-	assert not implements_serializer_interface(S3)
-	assert not implements_serializer_interface(S4)
-	assert not implements_serializer_interface(S5)
