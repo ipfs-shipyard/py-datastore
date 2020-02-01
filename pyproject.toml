@@ -22,10 +22,7 @@ classifiers = [
 	"Development Status :: 3 - Alpha",
 	"Intended Audience :: Developers",
 	"Intended Audience :: Information Technology",
-	"Intended Audience :: Science/Research",
 
-	"Topic :: Communications :: File Sharing",
-	"Topic :: Internet",
 	"Topic :: Scientific/Engineering",
 	"Topic :: System :: Filesystems",
 
@@ -38,5 +35,6 @@ classifiers = [
 	"Programming Language :: Python :: 3 :: Only"
 ]
 
-#[tool.flit.metadata.urls]
+[tool.flit.metadata.urls]
+Chat = "https://matrix.to/#/!BjPVgBWvlihAKfBaaQ:ninetailed.ninja?via=ninetailed.ninja&via=matrix.org&via=librem.one"
 #Documentation = ""
