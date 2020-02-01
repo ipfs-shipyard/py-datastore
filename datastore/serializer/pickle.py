@@ -3,6 +3,8 @@ import typing
 
 import datastore.abc
 
+__all__ = ("Serializer",)
+
 T_co = typing.TypeVar("T_co", covariant=True)
 
 
