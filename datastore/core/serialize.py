@@ -2,9 +2,11 @@ import abc
 import typing
 
 from . import binarystore
-from . import objectstore
 from . import key as key_
+from . import objectstore
 from . import query as query_
+
+
 class util:  # noqa
 	from .util import stream
 

@@ -1,5 +1,6 @@
-from functools import total_ordering, cmp_to_key
 import collections
+from functools import cmp_to_key, total_ordering
+
 from datastore.core.key import Key
 
 

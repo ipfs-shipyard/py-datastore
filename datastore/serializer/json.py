@@ -3,7 +3,6 @@ import typing
 
 import datastore.abc
 
-
 T_co = typing.TypeVar("T_co", covariant=True)
 
 

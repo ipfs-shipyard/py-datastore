@@ -2,7 +2,6 @@ import typing
 
 import datastore
 
-
 #XXX: Maybe retry describing this cooperative multiple inheritance scheme if these are ever added:
 #
 #  * https://github.com/python/mypy/issues/7191 (Mixin classes in general)

@@ -11,7 +11,8 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os
+import os
+import sys
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -227,7 +228,6 @@ intersphinx_mapping = {'http://docs.python.org/': None}
 # for autodoc to compile correctly in rtfd.org and other environments without
 # the presence of these dependencies, we must mock their imports.
 
-import sys
 
 class Mock(object):
 	def __init__(self, *args, **kwargs):

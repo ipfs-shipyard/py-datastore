@@ -2,7 +2,6 @@ import typing
 
 import datastore
 
-
 __all__ = ["ObjectDirectorySupport", "ObjectDatastore"]
 
 

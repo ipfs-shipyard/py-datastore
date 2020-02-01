@@ -1,16 +1,16 @@
 #!/usr/bin/python3
-import sys
 import os.path
+import sys
 import typing
 
 import mypy.main
 import mypy.modulefinder
 
-
 PEP517_OVERRIDE_MODULES = (
 	"pytest",
 	"trio",
 )
+
 
 # Patch method of `mypy.modulefinder.FindModuleCache` to ignore that fact that
 # some modules do not currently advertise their partial/incomplete typing
@@ -27,6 +27,7 @@ def _find_module_non_stub_helper(
 		   or component in PEP517_OVERRIDE_MODULES:
 			return os.path.join(pkg_dir, *components[:-1]), index == 0
 	return None
+
 
 mypy.modulefinder.FindModuleCache._find_module_non_stub_helper = _find_module_non_stub_helper
 

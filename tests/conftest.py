@@ -4,7 +4,6 @@ import pytest
 
 import datastore
 
-
 DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
 Query = typing.Any
 

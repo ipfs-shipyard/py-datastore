@@ -6,6 +6,8 @@ import trio
 
 from . import key as key_
 from . import query as query_
+
+
 class util:  # noqa
 	from .util import stream
 

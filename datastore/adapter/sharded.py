@@ -5,7 +5,6 @@ import datastore
 from . import _support
 from ._support import DS, RT
 
-
 __all__ = ["BinaryAdapter", "ObjectAdapter"]
 
 

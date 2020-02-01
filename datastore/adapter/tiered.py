@@ -1,17 +1,17 @@
 import typing
 
+import trio
+
 import datastore
 import datastore.abc
-import trio
+import datastore.core.util.stream
 
 from . import _support
 from ._support import DS, RT
 
-
 __all__ = ["BinaryAdapter", "ObjectAdapter"]
 
 
-import datastore.core.util.stream
 
 
 @typing.no_type_check
