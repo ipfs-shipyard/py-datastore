@@ -1,4 +1,6 @@
+import functools
 import typing
+from pathlib import Path
 
 import datastore
 
@@ -18,6 +20,9 @@ __all__ = [
 	
 	"BinaryNestedPathAdapter",
 	"ObjectNestedPathAdapter",
+	
+	"BinaryFlatFSAdapter",
+	"ObjectFlatFSAdapter"
 ]
 
 
@@ -143,6 +148,7 @@ class ObjectLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.ObjectDatasto
 
 class _NamespaceAdapter(_Adapter[DS], typing.Generic[DS]):
 	"""Represents a simple DatastoreAdapter that namespaces all incoming keys.
+
 	   For example:
 
 		>>> import datastore.core
@@ -182,7 +188,6 @@ class BinaryNamespaceAdapter(_NamespaceAdapter[datastore.abc.BinaryDatastore], d
 
 class ObjectNamespaceAdapter(_NamespaceAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
 	...
-
 
 
 class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
@@ -289,4 +294,162 @@ class BinaryNestedPathAdapter(_NestedPathAdapter[datastore.abc.BinaryDatastore],
 
 
 class ObjectNestedPathAdapter(_NestedPathAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
+	...
+
+
+class _FlatFSAdapter(_Adapter[DS], typing.Generic[DS]):
+	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
+
+	Incoming keys are sharded into namespaces according to specifications
+	in a `SHARDING` file, which `prefix`, `suffix`, and `next-to-last`
+	sharding functions available.
+
+	The file should be be a single line in the following format:
+		{prefix}/version/function_name/key_length
+	
+	Implementation Notes:
+		* The `default_prefix` is "/repo/flatfs/shard/"
+		* The only version supported is "v1"
+		* function_name must be `prefix`, `suffix`, or `next-to-last`
+
+	For example:
+
+		>>> import datastore
+		>>>
+		>>> ds = datastore.DictDatastore()
+		>>> np = datastore.FlatFSDatastore(ds)
+		>>>
+		>>> np.put(datastore.Key('/abcdefghijk'), 1)
+		>>> np.get(datastore.Key('/abcdefghijk'))
+		1
+		>>> ds.get(datastore.Key('/abcdefghijk'))
+		None
+		>>> ds.get(datastore.Key('/ab/cd/ef/abcdefghijk'))
+		1
+		>>> np.put(datastore.Key('abc'), 2)
+		>>> np.get(datastore.Key('abc'))
+		2
+		>>> ds.get(datastore.Key('/ab/ca/bc/abc'))
+		2
+	"""
+
+	_default_sharding_file: str = "SHARDING"
+	_default_prefix: str = "/repo/flatfs/shard/"
+	
+	@staticmethod
+	def _prefix(key: datastore.Key, length: int) -> datastore.Key:
+		return datastore.Key(str(key).ljust(length, "_")[:length])
+	
+	@staticmethod
+	def _suffix(key: datastore.Key, length: int) -> datastore.Key:
+		return datastore.Key(str(key).rjust(length, "_")[:length])
+
+	@staticmethod
+	def _next_to_last(key: datastore.Key, length: int) -> datastore.Key:
+		return datastore.Key(str(key).rjust(length + 1, "_")[:length])
+
+	def __init__(self, *args,
+	             sharding_file: str = None,
+	             prefix: str = None,
+	             **kwargs):
+		"""Initializes _FlatFSAdapter with sharding function.
+
+		Arguments
+		---------
+		sharding_file:
+			Path to the sharding file
+		prefix:
+			Prefix used in sharding file
+		"""
+
+		# assign the nesting variables
+		self.sharding_file = sharding_file if sharding_file is not None else self._default_sharding_file
+		self.prefix = prefix if prefix is not None else self._default_prefix
+
+		_sharding_function = self._parse_sharding_function()
+		super().__init__(*args, key_transform=_sharding_function, **kwargs)
+
+
+	def _parse_sharding_function(self) -> KEY_TRANSFORM_T:
+		"""Determine the sharding function from the SHARDING file.
+		
+		Raises
+		------
+		Exception
+			Sharding file was not found
+		Exception
+			Empty shard identifier file.
+		Exception
+			Prefix was not present in sharding file
+		Exception
+			Sharding file was in incorrect format
+		Exception
+			Expect `v1` format
+		Exceptiono
+		RuntimeError
+			An internal error occurred"""
+		# Ensure existence of sharding file
+		path: Path = Path(self.sharding_file)
+		if not path.exists():
+		    raise Exception(f"{self.sharding_file} file does not exist")
+
+		with open(path, "r") as f:
+		    sharding_func: str = f.read()
+
+		# Ensure not empty
+		if not sharding_func:
+		    raise Exception("Empty shard identifier file.")
+
+		sharding_func = sharding_func.strip()
+
+		# Returns a 3-tuple containing the part before the separator,
+		# the separator itself, and the part after the separator
+		_, _, sharding_func = sharding_func.partition(self.prefix)
+
+		# Ensure proper format
+		if not sharding_func:
+			raise Exception(f"Prefix ({self.prefix}) was not present in {sharding_func}")
+		
+		parts: list = sharding_func.split("/")
+
+		if len(parts) != 3:
+			raise Exception(
+				f"invalid shard identifier: {sharding_func}.\n"
+				f"Expecting form: {self.prefix}/version/function_name/key_length"
+			)
+
+		version, function_name, length = parts
+
+		if version != "v1":
+			raise Exception(f"Expected 'v1' for version string got: {version}\n")
+
+		try:
+			length = int(length)
+		except ValueError:
+			raise Exception(f"Invalid parameter: {length}. Should be integer representing `key_length`.")
+
+		__funcs: dict = {
+			"prefix": self._prefix,
+			"suffix": self._suffix,
+			"next-to-last": self._next_to_last
+		}
+
+		try:
+			_func = __funcs[function_name]
+		except Exception:
+			raise Exception(f"Expected 'prefix', 'suffix', or 'next-to-last' got: {function_name}")
+
+		return functools.partial(_func, length=length)
+
+
+	async def query(self, query: datastore.Query) -> datastore.Cursor:
+		# Requires supporting * operator on queries.
+		raise NotImplementedError()
+
+
+class BinaryFlatFSAdapter(_FlatFSAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
+	...
+
+
+class ObjectFlatFSAdapter(_FlatFSAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
 	...
