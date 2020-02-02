@@ -3,13 +3,13 @@ import typing
 import datastore
 
 from . import _support
-from ._support import DS, RT
+from ._support import DS, RT, RV, T_co
 
-__all__ = ["BinaryAdapter", "ObjectAdapter"]
+__all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 
-class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
+class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]):
 	"""Represents a collection of datastore shards.
 	
 	A datastore is selected based on a sharding function.
@@ -32,24 +32,29 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		self._shardingfn = sharding_fn
 	
 	
-	def shard(self, key: datastore.Key):
+	def shard(self, key: datastore.Key) -> int:
 		"""Returns the shard index to handle `key`, according to sharding fn."""
 		return self._shardingfn(key) % len(self._stores)
 	
 	
-	def get_sharded_datastore(self, key: datastore.Key):
+	def get_sharded_datastore(self, key: datastore.Key) -> DS:
 		"""Returns the shard to handle `key`."""
 		return self.get_datastore_at(self.shard(key))
 	
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).get(key)
+		return await self.get_sharded_datastore(key).get(key)  # type: ignore[return-value] # noqa: F723
+	
+	
+	async def get_all(self, key: datastore.Key) -> RV:
+		"""Return the object named by key from the corresponding datastore."""
+		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value] # noqa: F723, E501
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		"""Stores the object to the corresponding datastore."""
-		await self.get_sharded_datastore(key).put(key, value)
+		await self.get_sharded_datastore(key).put(key, value)  # type: ignore[arg-type] # noqa: F821
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
@@ -88,9 +93,21 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 					break  # we're already done!
 
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
+
+class BinaryAdapter(
+		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
 	...
 
 
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
+class ObjectAdapter(
+		typing.Generic[T_co],
+		_Adapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
 	...

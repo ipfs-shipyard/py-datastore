@@ -2,7 +2,7 @@ import typing
 
 import datastore
 
-__all__ = ["ObjectDirectorySupport", "ObjectDatastore"]
+__all__ = ("ObjectDirectorySupport", "ObjectDatastore")
 
 
 T_co = typing.TypeVar("T_co", covariant=True)
