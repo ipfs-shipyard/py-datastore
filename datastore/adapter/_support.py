@@ -4,7 +4,6 @@ import datastore
 
 #XXX: Maybe retry describing this cooperative multiple inheritance scheme if these are ever added:
 #
-#  * https://github.com/python/mypy/issues/7191 (Mixin classes in general)
 #  * https://github.com/python/mypy/issues/7790 (Associated types)
 #  * https://github.com/python/mypy/issues/7791 (Types of generic classes)
 DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
