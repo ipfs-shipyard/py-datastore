@@ -32,9 +32,9 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Return the object named by key or None if it does not exist.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: get %s' % (self, key))
+		self.logger.info('%s: get %s', self, key)
 		value = await super().get(key)  # type: ignore[misc] # noqa: F821
-		self.logger.debug('%s: %s' % (self, value))
+		self.logger.debug('%s: %s', self, value)
 		return value
 	
 	
@@ -42,9 +42,9 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Return the object named by key or None if it does not exist.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: get %s' % (self, key))
+		self.logger.info('%s: get %s', self, key)
 		value = await super().get_all(key)  # type: ignore[misc] # noqa: F821
-		self.logger.debug('%s: %s' % (self, value))
+		self.logger.debug('%s: %s', self, value)
 		return value
 	
 	
@@ -52,8 +52,8 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Stores the object `value` named by `key`self.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: put %s' % (self, key))
-		self.logger.debug('%s: %s' % (self, value))
+		self.logger.info('%s: put %s', self, key)
+		self.logger.debug('%s: %s', self, value)
 		await super()._put(key, value)  # type: ignore[misc] # noqa: F821
 	
 	
@@ -61,7 +61,7 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Removes the object named by `key`.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: delete %s' % (self, key))
+		self.logger.info('%s: delete %s', self, key)
 		await super().delete(key)  # type: ignore[misc] # noqa: F821
 	
 	
@@ -69,7 +69,7 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Returns whether the object named by `key` exists.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: contains %s' % (self, key))
+		self.logger.info('%s: contains %s', self, key)
 		return await super().contains(key)  # type: ignore[misc] # noqa: F821
 	
 	
@@ -77,7 +77,7 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		"""Returns an iterable of objects matching criteria expressed in `query`.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: query %s' % (self, query))
+		self.logger.info('%s: query %s', self, query)
 		return await super().query(query)  # type: ignore[misc] # noqa: F821
 
 
