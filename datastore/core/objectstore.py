@@ -49,6 +49,8 @@ class Datastore(typing.Generic[T_co]):
 	support queries efficiently.
 	"""
 	
+	__slots__ = ()
+	
 	# Some possibly useful types (assigned at the end of this file)
 	ADAPTER_T: type
 	RECEIVE_T: type
@@ -196,6 +198,8 @@ class Datastore(typing.Generic[T_co]):
 
 class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Stores nothing, but conforms to the API. Useful to test with."""
+	
+	__slots__ = ()
 
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Unconditionally raise `KeyError`"""
@@ -217,6 +221,8 @@ class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 
 class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Simple straw-man in-memory datastore backed by nested dicts."""
+	
+	__slots__ = ("_items",)
 	
 	_items: typing.Dict[str, typing.Dict[key_.Key, typing.List[T_co]]]
 	

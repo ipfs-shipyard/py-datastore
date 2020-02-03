@@ -91,7 +91,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		return util.stream.receive_channel_from(self.serializer.loads(value))
 	
 	
-	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co]) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
 		
 		Serializes values on the way in, and stores the serialized data into the
@@ -104,7 +104,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		value
 			The object to store.
 		"""
-		value_items = await util.stream.receive_channel_from(value).collect()  #FIXME
+		value_items = await value.collect()  #FIXME
 		value_bytes = self.serializer.dumps(value_items)
 		await self.child_datastore.put(key, value_bytes)
 

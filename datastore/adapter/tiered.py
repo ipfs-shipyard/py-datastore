@@ -36,6 +36,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 		* contains : returns first found value
 		* query    : queries bottom (most complete) datastore
 	"""
+	__slots__ = ()
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by key. Checks each datastore in order."""
@@ -148,7 +149,7 @@ class BinaryAdapter(
 		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("_stores",)
 
 
 class ObjectAdapter(
@@ -160,4 +161,4 @@ class ObjectAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("_stores",)

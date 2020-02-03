@@ -45,6 +45,7 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		>>> ds.get(datastore.Key('/c/b/a'))
 		None
 	"""
+	__slots__ = ()
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
@@ -94,7 +95,7 @@ class BinaryAdapter(
 		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("key_transform_fn",)
 
 
 class ObjectAdapter(
@@ -106,8 +107,7 @@ class ObjectAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
-
+	__slots__ = ("key_transform_fn",)
 
 
 class _LowercaseKeyAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
@@ -133,6 +133,7 @@ class _LowercaseKeyAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 		>>> lds.get(datastore.Key('HeLlO'))
 		'world'
 	"""
+	__slots__ = ()
 	
 	def __init__(self, *args, **kwargs):
 		"""Initializes KeyTransformDatastore with `key_transform` function."""
@@ -148,7 +149,7 @@ class BinaryLowercaseKeyAdapter(
 		_LowercaseKeyAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("key_transform_fn",)
 
 
 class ObjectLowercaseKeyAdapter(
@@ -160,7 +161,7 @@ class ObjectLowercaseKeyAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("key_transform_fn",)
 
 
 
@@ -186,6 +187,7 @@ class _NamespaceAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 		>>> ds.get(datastore.Key('/a/b/c/d'))
 		'cd'
 	"""
+	__slots__ = ()
 	
 	namespace: datastore.Key
 
@@ -203,7 +205,7 @@ class BinaryNamespaceAdapter(
 		_NamespaceAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("key_transform_fn", "namespace",)
 
 
 class ObjectNamespaceAdapter(
@@ -215,7 +217,7 @@ class ObjectNamespaceAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("key_transform_fn", "namespace",)
 
 
 
@@ -244,6 +246,7 @@ class _NestedPathAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 		>>> ds.get(datastore.Key('/ab/ca/bc/abc'))
 		2
 	"""
+	__slots__ = ()
 
 	_default_depth:  int = 3
 	_default_length: int = 2
@@ -322,7 +325,7 @@ class BinaryNestedPathAdapter(
 		_NestedPathAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")
 
 
 class ObjectNestedPathAdapter(
@@ -334,4 +337,4 @@ class ObjectNestedPathAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")

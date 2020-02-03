@@ -152,6 +152,7 @@ class ObjectDatastore(
 		>>> rds.get(a)
 		[]
 	"""
+	__slots__ = ()
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True

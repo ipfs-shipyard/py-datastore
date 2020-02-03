@@ -21,6 +21,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 	Also ensure the order is correct upon initialization. While this is not as
 	important for caches, it is crucial for persistent datastores.
 	"""
+	__slots__ = ()
 	
 	_shardingfn: _support.FunctionProperty[typing.Callable[[datastore.Key], int]]
 	
@@ -98,7 +99,7 @@ class BinaryAdapter(
 		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("_shardingfn", "_stores")
 
 
 class ObjectAdapter(
@@ -110,4 +111,4 @@ class ObjectAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("_shardingfn", "_stores")

@@ -33,6 +33,7 @@ class FunctionProperty(typing.Generic[T]):
 
 class DatastoreCollectionMixin(typing.Generic[DS]):
 	"""Represents a collection of datastores."""
+	__slots__ = ()
 	
 	_stores: typing.List[DS]
 	

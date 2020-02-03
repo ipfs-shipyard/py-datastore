@@ -18,6 +18,7 @@ ROOT_LOGGER: logging.Logger = logging.getLogger()
 
 class _Adapter(typing.Generic[DS, RT, RV]):
 	"""Wraps a datastore with a logging shim."""
+	__slots__ = ()
 	
 	logger: logging.Logger
 	
@@ -84,7 +85,7 @@ class BinaryAdapter(
 		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
-	...
+	__slots__ = ("logger",)
 
 
 class ObjectAdapter(
@@ -96,4 +97,4 @@ class ObjectAdapter(
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
-	...
+	__slots__ = ("logger",)
