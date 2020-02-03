@@ -32,6 +32,4 @@ def _find_module_non_stub_helper(
 mypy.modulefinder.FindModuleCache._find_module_non_stub_helper = _find_module_non_stub_helper
 
 
-sys.exit(mypy.main.main(None, sys.stdout, sys.stderr, [
-	"--namespace-packages"
-] + sys.argv[1:]))
+sys.exit(mypy.main.main(None, sys.stdout, sys.stderr, sys.argv[1:]))
