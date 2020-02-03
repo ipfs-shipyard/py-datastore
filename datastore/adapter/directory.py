@@ -153,6 +153,9 @@ class ObjectDatastore(
 		[]
 	"""
 	
+	FORWARD_CONTAINS = True
+	FORWARD_GET_ALL  = True
+	
 	
 	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.

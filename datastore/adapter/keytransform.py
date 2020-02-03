@@ -3,7 +3,7 @@ import typing
 import datastore
 
 from . import _support
-from ._support import DS, RT, T_co
+from ._support import DS, RT, RV, T_co
 
 __all__ = (
 	"BinaryAdapter",
@@ -24,7 +24,7 @@ __all__ = (
 KEY_TRANSFORM_T = typing.Callable[[datastore.Key], datastore.Key]
 
 
-class _Adapter(typing.Generic[DS, RT]):
+class _Adapter(typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that applies a transform on all incoming
 	   keys. For example:
 
@@ -46,6 +46,9 @@ class _Adapter(typing.Generic[DS, RT]):
 		None
 	"""
 	
+	FORWARD_CONTAINS = True
+	FORWARD_GET_ALL  = True
+	
 	key_transform_fn: _support.FunctionProperty[KEY_TRANSFORM_T]
 	
 	
@@ -58,6 +61,11 @@ class _Adapter(typing.Generic[DS, RT]):
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by keytransform(key)."""
 		return await super().get(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+	
+	
+	async def get_all(self, key: datastore.Key) -> RV:
+		"""Return the object named by keytransform(key)."""
+		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
@@ -83,7 +91,7 @@ class _Adapter(typing.Generic[DS, RT]):
 
 
 class BinaryAdapter(
-		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream],
+		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
 	...
@@ -93,7 +101,8 @@ class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
 			datastore.abc.ObjectDatastore[T_co],
-			datastore.abc.ReceiveChannel[T_co]
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
@@ -101,7 +110,7 @@ class ObjectAdapter(
 
 
 
-class _LowercaseKeyAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
+class _LowercaseKeyAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that lowercases all incoming keys.
 	
 	For example:
@@ -136,7 +145,7 @@ class _LowercaseKeyAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
 
 
 class BinaryLowercaseKeyAdapter(
-		_LowercaseKeyAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream],
+		_LowercaseKeyAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
 	...
@@ -146,7 +155,8 @@ class ObjectLowercaseKeyAdapter(
 		typing.Generic[T_co],
 		_LowercaseKeyAdapter[
 			datastore.abc.ObjectDatastore[T_co],
-			datastore.abc.ReceiveChannel[T_co]
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
@@ -154,7 +164,7 @@ class ObjectLowercaseKeyAdapter(
 
 
 
-class _NamespaceAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
+class _NamespaceAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that namespaces all incoming keys.
 	   For example:
 
@@ -190,7 +200,7 @@ class _NamespaceAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
 
 
 class BinaryNamespaceAdapter(
-		_NamespaceAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream],
+		_NamespaceAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
 	...
@@ -200,7 +210,8 @@ class ObjectNamespaceAdapter(
 		typing.Generic[T_co],
 		_NamespaceAdapter[
 			datastore.abc.ObjectDatastore[T_co],
-			datastore.abc.ReceiveChannel[T_co]
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
@@ -208,7 +219,7 @@ class ObjectNamespaceAdapter(
 
 
 
-class _NestedPathAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
+class _NestedPathAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
 
 	Incoming keys are sharded into nested namespaces. The idea is to use the key
@@ -308,7 +319,7 @@ class _NestedPathAdapter(_Adapter[DS, RT], typing.Generic[DS, RT]):
 
 
 class BinaryNestedPathAdapter(
-		_NestedPathAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream],
+		_NestedPathAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
 		datastore.abc.BinaryAdapter
 ):
 	...
@@ -318,7 +329,8 @@ class ObjectNestedPathAdapter(
 		typing.Generic[T_co],
 		_NestedPathAdapter[
 			datastore.abc.ObjectDatastore[T_co],
-			datastore.abc.ReceiveChannel[T_co]
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
 		],
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):

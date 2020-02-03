@@ -194,7 +194,7 @@ class DictDatastore(Datastore):
 	_items: typing.Dict[str, typing.Dict[key_.Key, bytes]]
 
 	def __init__(self):
-		self._items = dict()
+		self._items = {}
 	
 	
 	def _collection(self, key: key_.Key) -> typing.Dict[key_.Key, bytes]:
@@ -289,6 +289,10 @@ class Adapter(Datastore):
 	data themselves; instead, they delegate storage to an underlying child
 	datastore. The default implementation just passes all calls to the child.
 	"""
+	__slots__ = ("child_datastore",)
+	
+	FORWARD_CONTAINS: bool = False
+	FORWARD_GET_ALL:  bool = False
 	
 	child_datastore: Datastore
 	
@@ -296,43 +300,47 @@ class Adapter(Datastore):
 		"""Initializes this DatastoreAdapter with child `datastore`."""
 		self.child_datastore = datastore
 	
+	
 	# default implementation just passes all calls to child
+	
+	
 	async def get(self, key: key_.Key) -> util.stream.ReceiveStream:
-		"""Returns the object named by `key` or raises `KeyError` if it does
-		   not exist.
+		"""Returns the binary stream named by `key` or raises `KeyError` if
+		   it does not exist.
 
 		Default shim implementation simply returns ``child_datastore.get(key)``
 		Override to provide different functionality, for example::
 
-			def get(self, key):
-			  value = self.child_datastore.get(key)
-			  return json.loads(value)
+			async def get(self, key):
+				# Collect the data returned by child and decode it as JSON
+				# (Note: Use `datastore.serializer.json` rather than this for real apps.)
+				value = await self.child_datastore.get_all(key)
+				return datastore.util.receive_stream_from(json.loads(value))
 
 		Arguments
 		---------
 		key
-			Key naming the object to retrieve
+			Key naming the data to retrieve.
 		"""
-		
 		return await self.child_datastore.get(key)
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
-		"""Stores the object `value` named by `key`.
+		"""Stores the data from the binary stream `value` at name `key`.
 		
 		Default shim implementation simply calls ``child_datastore.put(key, value)``
 		Override to provide different functionality, for example::
 		
-			def put(self, key, value):
-			  value = json.dumps(value)
-			  self.child_datastore.put(key, value)
+			async def _put(self, key, value):
+				value = json.dumps(await value.collect())
+				await self.child_datastore.put(key, value)
 		
 		Arguments
 		---------
 		key
 			Key naming `value`.
 		value
-			The object to store.
+			The data to store.
 		"""
 		await self.child_datastore.put(key, value)
 	
@@ -343,21 +351,55 @@ class Adapter(Datastore):
 		Default shim implementation simply calls ``child_datastore.delete(key)``
 		Override to provide different functionality.
 
-		Args:
-		  key: Key naming the object to remove.
+		Arguments
+		---------
+		key
+			Key naming the data to remove.
 		"""
 		await self.child_datastore.delete(key)
 	
 	
+	async def get_all(self, key: key_.Key) -> bytes:
+		"""Returns the binary data named by `key` or raises `KeyError` if it
+		   does not exist.
+		
+		Default shim implementation simply returns ``child_datastore.get_all(key)``
+		if ``FORWARD_GET_ALL`` is `True`, ``(await get(key)).collect()`` otherwise.
+		
+		Override to provide different functionality, for example::
+		
+			async def get_all(self, key):
+				# Collect the data returned by child and decode it as JSON
+				# (Note: Use `datastore.serializer.json` rather than this for real apps.)
+				value = await self.child_datastore.get_all(key)
+				return datastore.util.receive_stream_from(json.loads(value))
+
+		Arguments
+		---------
+		key
+			Key naming the object to retrieve
+		"""
+		if self.FORWARD_GET_ALL:
+			return await self.child_datastore.get_all(key)
+		else:
+			return await Datastore.get_all(self, key)
+	
+	
 	async def contains(self, key: key_.Key) -> bool:
 		"""Returns whether any data named by `key` exists
+		
+		Default shim implementation simply returns ``child_datastore.contains(key)``
+		if ``FORWARD_CONTAINS`` is `True`, ``not (get(key) raises KeyError)`` otherwise.
 		
 		Arguments
 		---------
 		key
 			Key naming the object to check.
 		"""
-		return await self.child_datastore.contains(key)
+		if self.FORWARD_CONTAINS:
+			return await self.child_datastore.contains(key)
+		else:
+			return await Datastore.contains(self, key)
 
 
 Datastore.ADAPTER_T = Adapter
