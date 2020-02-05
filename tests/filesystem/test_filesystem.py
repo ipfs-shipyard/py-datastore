@@ -1,3 +1,4 @@
+import contextlib
 import os.path
 import tempfile
 
@@ -18,9 +19,11 @@ def temp_path():
 async def test_datastore(temp_path):
 	dirs = map(str, range(0, 4))
 	dirs = map(lambda d: os.path.join(temp_path, d), dirs)
-	fses = list(map(FileSystemDatastore, dirs))
-	await DatastoreTests(fses).subtest_simple()
-	
-	# Check that all items were cleaned up
-	for fs in fses:
-		assert os.listdir(fs.root_path) == []
+	async with contextlib.AsyncExitStack() as stack:
+		fses = [stack.push_async_exit(FileSystemDatastore(dir)) for dir in dirs]
+		
+		await DatastoreTests(fses).subtest_simple()
+		
+		# Check that all items were cleaned up
+		for fs in fses:
+			assert os.listdir(fs.root_path) == []

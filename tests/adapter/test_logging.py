@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import typing
 
@@ -32,6 +33,7 @@ class NullLogger(_Logger):
 @pytest.mark.parametrize(*make_datastore_test_params("logging"))
 @trio.testing.trio_test
 async def test_logging_simple(DatastoreTests, Adapter, DictDatastore, encode_fn):
-	s1 = Adapter(DictDatastore(), logger=NullLogger('null'))
-	s2 = Adapter(DictDatastore())
-	await DatastoreTests([s1, s2]).subtest_simple()
+	async with contextlib.AsyncExitStack() as stack:
+		s1 = stack.push_async_exit(Adapter(DictDatastore(), logger=NullLogger('null')))
+		s2 = stack.push_async_exit(Adapter(DictDatastore()))
+		await DatastoreTests([s1, s2]).subtest_simple()

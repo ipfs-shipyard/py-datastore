@@ -143,6 +143,11 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 			if await store.contains(key):
 				return True
 		return False
+	
+	
+	async def aclose(self) -> None:
+		"""Closes and removes all added datastores"""
+		await self._stores_cleanup()
 
 
 class BinaryAdapter(

@@ -92,6 +92,11 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 				
 				if shard_query.limit <= 0:
 					break  # we're already done!
+	
+	
+	async def aclose(self) -> None:
+		"""Closes and removes all added datastores"""
+		await self._stores_cleanup()
 
 
 

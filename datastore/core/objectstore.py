@@ -32,7 +32,7 @@ def is_valid_value_type(value: util.stream.ArbitraryReceiveChannel) -> bool:
 	)) and not isinstance(value, (str, bytes))
 
 
-class Datastore(typing.Generic[T_co]):
+class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 	"""A Datastore represents storage for any string key to an arbitrary Python object pair.
 
 	Datastores are general enough to be backed by all kinds of different storage:
@@ -193,6 +193,16 @@ class Datastore(typing.Generic[T_co]):
 			An internal error occurred
 		"""
 		return await (await self.get(key)).collect()
+	
+	
+	async def aclose(self) -> None:
+		"""Closes this any resources held by this datastore, possibly blocking
+		
+		Carefully read the documentation of :class:`trio.abc.AsyncResource`,
+		particularily with regards to concellation and forceful closings, when
+		implementating this.
+		"""
+		pass
 
 
 
@@ -336,6 +346,12 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	
 	def __len__(self) -> int:
 		return sum(map(len, self._items.values()))
+	
+	
+	async def aclose(self) -> None:
+		"""Deletes all items from this datastore"""
+		self._items.clear()
+		await super().aclose()
 
 
 
@@ -483,6 +499,19 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 			return await self.child_datastore.contains(key)
 		else:
 			return await Datastore.contains(self, key)
+	
+	
+	async def aclose(self) -> None:
+		"""Closes this any resources held by the child datastore
+		
+		Carefully read the documentation of :class:`trio.abc.AsyncResource`,
+		particularily with regards to concellation and forceful closings, when
+		implementating this.
+		"""
+		try:
+			await self.child_datastore.aclose()
+		finally:
+			await super().aclose()
 
 
 Datastore.ADAPTER_T = Adapter
