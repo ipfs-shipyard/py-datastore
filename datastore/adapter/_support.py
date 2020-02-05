@@ -1,5 +1,7 @@
 import typing
 
+import trio
+
 import datastore
 
 T_co = typing.TypeVar("T_co", covariant=True)
@@ -58,3 +60,24 @@ class DatastoreCollectionMixin(typing.Generic[DS]):
 	def insert_datastore(self, index: int, store: DS) -> None:
 		"""Inserts datastore `store` into this collection at `index`."""
 		self._stores.insert(index, store)
+	
+	async def _stores_cleanup(self) -> None:
+		"""Closes and removes all added datastores"""
+		errors: typing.List[Exception] = []
+		
+		while len(self._stores):
+			store = self._stores.pop()
+			
+			try:
+				await store.aclose()
+			except trio.Cancelled:
+				pass  # We check for cancellation later on
+			except Exception as error:
+				errors.append(error)
+		
+		# Ensure error propagation
+		if errors:
+			raise trio.MultiError(errors)
+		
+		# Ensure cancellation is propagated
+		await trio.sleep(0)
