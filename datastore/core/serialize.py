@@ -8,6 +8,7 @@ from . import query as query_
 
 
 class util:  # noqa
+	from .util import metadata
 	from .util import stream
 
 
@@ -160,6 +161,25 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 			Key naming the object to check.
 		"""
 		return await self.child_datastore.contains(key)
+	
+	
+	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
+		"""Returns whether an object named by `key` exists
+		
+		The default implementation pays the cost of a get. Some datastore
+		implementations may optimize this.
+		
+		Arguments
+		---------
+		key
+			Key naming the object to check.
+		"""
+		metadata: util.metadata.StreamMetadata = await self.child_datastore.stat(key)
+		return util.metadata.ChannelMetadata(
+			atime = metadata.atime,
+			mtime = metadata.mtime,
+			btime = metadata.btime
+		)
 
 
 """

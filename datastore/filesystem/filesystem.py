@@ -2,6 +2,7 @@ import errno
 import io
 import os
 import pathlib
+import stat as stat_
 import typing
 
 import trio
@@ -24,31 +25,10 @@ class FileReader(datastore.abc.ReceiveStream):
 	_file: 'trio._file_io.AsyncIOWrapper'
 	
 	
-	def __init__(self, file: 'trio._file_io.AsyncIOWrapper', stat: stat_result_t):
-		super().__init__()
-		
+	def __init__(self, file: 'trio._file_io.AsyncIOWrapper', **kwargs):
 		self._file = file
 		
-		self.size  = stat.st_size
-		self.atime = stat.st_atime
-		self.mtime = stat.st_mtime
-		if stat.st_atime_ns:
-			self.atime = stat.st_atime_ns / 1_000_000_000
-		if stat.st_mtime_ns:
-			self.mtime = stat.st_mtime_ns / 1_000_000_000
-		
-		# Finding btime from stat is tricky and platform dependant
-		st_birthtime_ns: typing.Optional[int] = getattr(stat, "st_birthtime_ns", None)
-		if st_birthtime_ns:
-			# Linux with statx patch exposes this
-			self.btime = st_birthtime_ns / 1_000_000_000
-		elif hasattr(stat, "st_birthtime") and stat.st_birthtime:
-			# FreeBSD/macOS has this field
-			self.btime = stat.st_birthtime
-		elif os.name == "nt":  # Windows stores btime as ctime
-			self.btime = stat.st_ctime
-			if stat.st_ctime_ns:
-				self.btime = stat.st_ctime_ns / 1_000_000_000
+		super().__init__(**kwargs)
 	
 	
 	async def receive_some(self, max_bytes: typing.Optional[int] = None):
@@ -67,6 +47,35 @@ class FileReader(datastore.abc.ReceiveStream):
 		await self._file.aclose()
 	
 	
+	@staticmethod
+	def stat_result_to_kwargs(stat: stat_result_t):
+		result = {
+			"size":  stat.st_size,
+			"atime": stat.st_atime,
+			"mtime": stat.st_mtime
+		}
+		
+		if stat.st_atime_ns:
+			result["atime"] = stat.st_atime_ns / 1_000_000_000
+		if stat.st_mtime_ns:
+			result["mtime"] = stat.st_mtime_ns / 1_000_000_000
+		
+		# Finding btime from stat is tricky and platform dependant
+		st_birthtime_ns: typing.Optional[int] = getattr(stat, "st_birthtime_ns", None)
+		if st_birthtime_ns:
+			# Linux with statx patch exposes this
+			result["btime"] = st_birthtime_ns / 1_000_000_000
+		elif hasattr(stat, "st_birthtime") and stat.st_birthtime:
+			# FreeBSD/macOS has this field
+			result["btime"] = stat.st_birthtime
+		elif os.name == "nt":  # Windows stores btime as ctime
+			result["btime"] = stat.st_ctime
+			if stat.st_ctime_ns:
+				result["btime"] = stat.st_ctime_ns / 1_000_000_000
+		
+		return result
+	
+	
 	@classmethod
 	async def from_path(cls, filepath: typing.Union[str, bytes, os.PathLike]):
 		# Open file
@@ -75,7 +84,7 @@ class FileReader(datastore.abc.ReceiveStream):
 			# Query file stat data
 			stat = await trio.run_sync_in_worker_thread(statx.stat, file.fileno(), cancellable=True)
 			
-			return cls(file, stat)
+			return cls(file, **cls.stat_result_to_kwargs(stat))
 		except BaseException:
 			await file.aclose()
 			raise
@@ -190,7 +199,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""Returns the relative path for object pointed by `key`."""
 		return self.relative_path(key).with_suffix(self.object_extension)
 
-	def object_path(self, key: datastore.Key):
+	def object_path(self, key: datastore.Key) -> pathlib.PurePath:
 		"""return the object path for `key`."""
 		return self.root_path / self.relative_object_path(key)
 	
@@ -339,3 +348,30 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			if exc.errno == errno.ENOTEMPTY:
 				return
 			raise
+	
+	
+	async def stat(self, key: datastore.Key) -> datastore.util.StreamMetadata:
+		"""Returns the metadata of the data named by key, or raises KeyError otherwise.
+		
+		Arguments
+		---------
+		key
+			Key naming the data to retrieve
+
+		Raises
+		------
+		KeyError
+			The requested file data did not exist
+		RuntimeError
+			The given ``key`` names a subtree, not a value
+		"""
+		path = self.object_path(key)
+		try:
+			stat = await trio.run_sync_in_worker_thread(statx.stat, path, cancellable=True)
+			if stat_.S_ISDIR(stat.st_mode):
+				# Should hopefully only happen if `object_extension` is `""`
+				raise RuntimeError(f"Key '{key}' names a subtree, not a value")
+			
+			return datastore.util.StreamMetadata(**FileReader.stat_result_to_kwargs(stat))
+		except FileNotFoundError as exc:
+			raise KeyError(key) from exc

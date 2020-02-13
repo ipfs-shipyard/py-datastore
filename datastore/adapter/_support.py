@@ -14,6 +14,8 @@ DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore,
                     datastore.abc.ObjectDatastore[T_co])  # type: ignore[valid-type] # noqa: F821
 DA = typing.TypeVar("DA", datastore.abc.BinaryAdapter,
                     datastore.abc.ObjectAdapter[T_co, T_co])  # type: ignore[valid-type] # noqa: F821, E501
+MD = typing.TypeVar("MD", datastore.util.StreamMetadata,
+                    datastore.util.ChannelMetadata)  # type: ignore[valid-type] # noqa: F821
 RT = typing.TypeVar("RT", datastore.abc.ReceiveStream,
                     datastore.abc.ReceiveChannel[T_co])  # type: ignore[valid-type] # noqa: F821
 RV = typing.TypeVar("RV", bytes, typing.List[T_co])  # type: ignore[valid-type] # noqa: F821

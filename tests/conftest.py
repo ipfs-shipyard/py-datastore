@@ -1,11 +1,60 @@
+import re
 import typing
 
 import pytest
+import trio
 
 import datastore
 
 DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
 Query = typing.Any
+
+
+class raises:
+	"""Assert that a code block/function call raises ``expected_exception``
+	either directly or as part of a :mod:`trio.MultiError` or raise a PyTest
+	failure exception otherwise.
+	
+	This is the :mod:`trio.MultiError` compatible variant of :func:`pytest.raises`.
+	"""
+	
+	def __init__(self, expected_exception, *, match = None):
+		self.expected_exception = expected_exception
+		self.message = "DID NOT RAISE {}".format(expected_exception) 
+		self.match_expr = match
+	
+	def __enter__(self):
+		return None
+	
+	def __exit__(self, type, value, traceback):
+		__tracebackhide__ = True
+		
+		if type is None:
+			pytest.fail(self.message)
+		
+		# Check if all received exceptions are of the correct type
+		suppress_exception = True
+		def validate_exc_type(exc):
+			__tracebackhide__ = True
+			
+			nonlocal suppress_exception
+			if not isinstance(exc, self.expected_exception):
+				suppress_exception = False
+		trio.MultiError.filter(validate_exc_type, value)
+		
+		# Check if all received exceptions match the required pattern
+		if self.match_expr is not None and suppress_exception:
+			pat = re.compile(self.match_expr)
+			def validate_exc_str(exc):
+				__tracebackhide__ = True
+				
+				if not pat.search(str(exc)):
+					raise AssertionError(
+						"Pattern {!r} not found in {!r}".format(self.match_expr, str(exc))
+					)
+			trio.MultiError.filter(validate_exc_str, value)
+		
+		return suppress_exception
 
 
 @pytest.fixture(name="DatastoreTests")
@@ -68,9 +117,21 @@ class DatastoreTests(typing.Generic[DS]):
 			key = self.pkey.child(value)
 			for sn in self.stores:
 				assert not await sn.contains(key)
+				with raises(KeyError):
+					await sn.get(key)
+				with raises(KeyError):
+					await sn.get_all(key)
+				with raises(KeyError):
+					await sn.stat(key)
+				
 				await sn.put(key, self.encode(value))
+				
 				assert await sn.contains(key)
-				assert await sn.get_all(key) == self.encode(value)
+				assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
+				if self.is_binary:
+					assert (await sn.stat(key)).size == len(self.encode(value))
+				else:
+					assert (await sn.stat(key)).count == 1
 
 		# reassure they're all there.
 		self.check_length(self.numelems)
@@ -79,7 +140,7 @@ class DatastoreTests(typing.Generic[DS]):
 			key = self.pkey.child(value)
 			for sn in self.stores:
 				assert await sn.contains(key)
-				assert await sn.get_all(key) == self.encode(value)
+				assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
 
 		self.check_length(self.numelems)
 	

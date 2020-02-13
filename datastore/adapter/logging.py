@@ -3,7 +3,7 @@ import typing
 
 import datastore
 
-from ._support import DS, RT, RV, T_co
+from ._support import DS, MD, RT, RV, T_co
 
 __all__ = [
 	"BinaryAdapter",
@@ -16,7 +16,7 @@ ROOT_LOGGER: logging.Logger = logging.getLogger()
 
 
 
-class _Adapter(typing.Generic[DS, RT, RV]):
+class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	"""Wraps a datastore with a logging shim."""
 	__slots__ = ()
 	
@@ -73,6 +73,16 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		return await super().contains(key)  # type: ignore[misc] # noqa: F821
 	
 	
+	async def stat(self, key: datastore.Key) -> MD:
+		"""Returns the metadata of the object named by `key`.
+		   LoggingDatastore logs the access.
+		"""
+		self.logger.info('%s: stat %s', self, key)
+		metadata = await super().stat(key)  # type: ignore[misc] # noqa: F821
+		self.logger.debug('%s: %s', self, metadata)
+		return metadata
+	
+	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`.
 		   LoggingDatastore logs the access.
@@ -82,7 +92,12 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 
 
 class BinaryAdapter(
-		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		_Adapter[
+			datastore.abc.BinaryDatastore,
+			datastore.util.StreamMetadata,
+			datastore.abc.ReceiveStream,
+			bytes
+		],
 		datastore.abc.BinaryAdapter
 ):
 	__slots__ = ("logger",)
@@ -92,6 +107,7 @@ class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
 			datastore.abc.ObjectDatastore[T_co],
+			datastore.util.ChannelMetadata,
 			datastore.abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],

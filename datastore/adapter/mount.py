@@ -4,7 +4,7 @@ import trio
 
 import datastore
 
-from ._support import DS, RT, RV, T_co
+from ._support import DS, MD, RT, RV, T_co
 
 __all__ = [
 	"BinaryAdapter",
@@ -13,7 +13,7 @@ __all__ = [
 
 
 
-class _Adapter(typing.Generic[DS, RT, RV]):
+class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	__slots__ = ()
 	
 	# Cannot represent recursive types yet (https://github.com/python/mypy/issues/731)
@@ -85,6 +85,13 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 		if ds is None:
 			return False
 		return await ds.contains(subkey)
+	
+	
+	async def stat(self, key: datastore.Key) -> MD:
+		ds, subkey = self._find_mountpoint(key)
+		if ds is None:
+			raise KeyError(key)
+		return await ds.stat(subkey)  # type: ignore[return-value] # noqa: F723
 	
 	
 	def mount(self, prefix: datastore.Key, ds: DS) -> None:
@@ -200,7 +207,12 @@ class _Adapter(typing.Generic[DS, RT, RV]):
 
 
 class BinaryAdapter(
-		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		_Adapter[
+			datastore.abc.BinaryDatastore,
+			datastore.util.StreamMetadata,
+			datastore.abc.ReceiveStream,
+			bytes
+		],
 		datastore.abc.BinaryAdapter
 ):
 	__slots__ = ("mounts",)
@@ -210,6 +222,7 @@ class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
 			datastore.abc.ObjectDatastore[T_co],
+			datastore.util.ChannelMetadata,
 			datastore.abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],

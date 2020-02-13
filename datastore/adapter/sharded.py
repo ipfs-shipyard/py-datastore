@@ -3,13 +3,13 @@ import typing
 import datastore
 
 from . import _support
-from ._support import DS, RT, RV, T_co
+from ._support import DS, MD, RT, RV, T_co
 
 __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 
-class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]):
+class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
 	"""Represents a collection of datastore shards.
 	
 	A datastore is selected based on a sharding function.
@@ -68,6 +68,11 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 		return await self.get_sharded_datastore(key).contains(key)
 	
 	
+	async def stat(self, key: datastore.Key) -> MD:
+		"""Return the metadata of the object named by key from the corresponding datastore."""
+		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value] # noqa: F723
+	
+	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		cursor = datastore.Cursor(query, self._shard_query_generator(query))
@@ -101,7 +106,12 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 
 
 class BinaryAdapter(
-		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		_Adapter[
+			datastore.abc.BinaryDatastore,
+			datastore.util.StreamMetadata,
+			datastore.abc.ReceiveStream,
+			bytes
+		],
 		datastore.abc.BinaryAdapter
 ):
 	__slots__ = ("_shardingfn", "_stores")
@@ -111,6 +121,7 @@ class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
 			datastore.abc.ObjectDatastore[T_co],
+			datastore.util.ChannelMetadata,
 			datastore.abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],

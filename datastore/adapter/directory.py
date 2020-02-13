@@ -156,6 +156,7 @@ class ObjectDatastore(
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
+	FORWARD_STAT     = True
 	
 	
 	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co]) -> None:
