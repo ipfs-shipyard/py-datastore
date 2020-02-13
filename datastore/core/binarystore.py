@@ -9,6 +9,7 @@ from . import query as query_
 
 
 class util:  # noqa
+	from .util import metadata
 	from .util import stream
 
 
@@ -49,8 +50,9 @@ class Datastore(trio.abc.AsyncResource):
 	__slots__ = ()
 
 	# Some possibly useful types (assigned at the end of this file)
-	ADAPTER_T: type
-	RECEIVE_T: type
+	ADAPTER_T:  type
+	METADATA_T: type
+	RECEIVE_T:  type
 	
 	# Main API. Datastore implementations MUST implement these methods.
 	
@@ -166,6 +168,31 @@ class Datastore(trio.abc.AsyncResource):
 			An internal error occurred
 		"""
 		return await (await self.get(key)).collect()
+	
+	
+	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
+		"""Returns any metadata associated with the data stream named by `key`
+		or raises `KeyError` otherwise
+		
+		Arguments
+		---------
+		key
+			Key naming the data stream to query
+		
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
+		RuntimeError
+			An internal error occurred
+		"""
+		async with await self.get(key) as chann:
+			return util.metadata.StreamMetadata(
+				atime = chann.atime,
+				mtime = chann.mtime,
+				btime = chann.btime,
+				size  = chann.size
+			)
 	
 	
 	async def aclose(self) -> None:
@@ -292,6 +319,19 @@ class DictDatastore(Datastore):
 		return key in self._collection(key)
 	
 	
+	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
+		"""Returns the length of the byte sequence named by `key` if it exists.
+		
+		Checks for the sequence in the collection corresponding to ``key.path``.
+		
+		Arguments
+		---------
+		key
+			Key naming a byte sequence
+		"""
+		return util.metadata.StreamMetadata(size=len(self._collection(key)[key]))
+	
+	
 	def __len__(self) -> int:
 		return sum(map(len, self._items.values()))
 	
@@ -315,6 +355,7 @@ class Adapter(Datastore):
 	
 	FORWARD_CONTAINS: bool = False
 	FORWARD_GET_ALL:  bool = False
+	FORWARD_STAT:     bool = False
 	
 	child_datastore: Datastore
 	
@@ -424,6 +465,23 @@ class Adapter(Datastore):
 			return await Datastore.contains(self, key)
 	
 	
+	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
+		"""Returns the metadata of the stream named by `key` if it exists
+		
+		Default shim implementation simply returns ``child_datastore.stat(key)``
+		if ``FORWARD_STAT`` is `True`, ``get(key)`` otherwise.
+		
+		Arguments
+		---------
+		key
+			Key naming the stream to check.
+		"""
+		if self.FORWARD_STAT:
+			return await self.child_datastore.stat(key)
+		else:
+			return await Datastore.stat(self, key)
+	
+	
 	async def aclose(self) -> None:
 		"""Closes this any resources held by the child datastore
 		
@@ -437,8 +495,9 @@ class Adapter(Datastore):
 			await super().aclose()
 
 
-Datastore.ADAPTER_T = Adapter
-Datastore.RECEIVE_T = util.stream.ReceiveStream
+Datastore.ADAPTER_T  = Adapter
+Datastore.METADATA_T = util.metadata.StreamMetadata
+Datastore.RECEIVE_T  = util.stream.ReceiveStream
 
 
 """

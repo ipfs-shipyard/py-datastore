@@ -9,6 +9,7 @@ from . import query as query_
 
 
 class util:  # noqa
+	from .util import metadata
 	from .util import stream
 
 
@@ -52,8 +53,9 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 	__slots__ = ()
 	
 	# Some possibly useful types (assigned at the end of this file)
-	ADAPTER_T: type
-	RECEIVE_T: type
+	ADAPTER_T:  type
+	METADATA_T: type
+	RECEIVE_T:  type
 
 	# Main API. Datastore implementations MUST implement these methods.
 	
@@ -195,6 +197,31 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 		return await (await self.get(key)).collect()
 	
 	
+	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
+		"""Returns any metadata associated with the objects named by `key` or
+		raises `KeyError` otherwise
+		
+		Arguments
+		---------
+		key
+			Key naming the object stream to query
+		
+		Raises
+		------
+		KeyError
+			The given object was not present in this datastore
+		RuntimeError
+			An internal error occurred
+		"""
+		async with await self.get(key) as chann:
+			return util.metadata.ChannelMetadata(
+				atime = chann.atime,
+				mtime = chann.mtime,
+				btime = chann.btime,
+				count = chann.count
+			)
+	
+	
 	async def aclose(self) -> None:
 		"""Closes this any resources held by this datastore, possibly blocking
 		
@@ -326,6 +353,19 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		return key in self._collection(key)
 	
 	
+	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
+		"""Returns the length of the object list named by `key` if it exists.
+		
+		Checks for the object in the collection corresponding to ``key.path``.
+		
+		Arguments
+		---------
+		key
+			Key naming an object list
+		"""
+		return util.metadata.ChannelMetadata(count=len(self._collection(key)[key]))
+	
+	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
 
@@ -367,6 +407,7 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	
 	FORWARD_CONTAINS: bool = False
 	FORWARD_GET_ALL:  bool = False
+	FORWARD_STAT:     bool = False
 	
 	child_datastore: Datastore[U_co]
 	
@@ -501,6 +542,23 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 			return await Datastore.contains(self, key)
 	
 	
+	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
+		"""Returns the metadata of the object list named by `key` if it exists
+		
+		Default shim implementation simply returns ``child_datastore.stat(key)``
+		if ``FORWARD_STAT`` is `True`, ``get(key)`` otherwise.
+		
+		Arguments
+		---------
+		key
+			Key naming the object list to check.
+		"""
+		if self.FORWARD_STAT:
+			return await self.child_datastore.stat(key)
+		else:
+			return await Datastore.stat(self, key)
+	
+	
 	async def aclose(self) -> None:
 		"""Closes this any resources held by the child datastore
 		
@@ -514,8 +572,9 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 			await super().aclose()
 
 
-Datastore.ADAPTER_T = Adapter
-Datastore.RECEIVE_T = util.stream.ReceiveChannel
+Datastore.ADAPTER_T  = Adapter
+Datastore.METADATA_T = util.metadata.ChannelMetadata
+Datastore.RECEIVE_T  = util.stream.ReceiveChannel
 
 
 

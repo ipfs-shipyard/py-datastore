@@ -7,7 +7,7 @@ import datastore.abc
 import datastore.core.util.stream
 
 from . import _support
-from ._support import DS, RT, RV, T_co
+from ._support import DS, MD, RT, RV, T_co
 
 __all__ = ("BinaryAdapter", "ObjectAdapter")
 
@@ -19,7 +19,7 @@ async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: d
 	await store.put(key, receive_stream)
 
 
-class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]):
+class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
 	"""Represents a hierarchical collection of datastores.
 
 	Each datastore is queried in order. This is helpful to organize access
@@ -34,6 +34,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 		* put      : writes through to all
 		* delete   : deletes through to all
 		* contains : returns first found value
+		* stat     : returns first found value
 		* query    : queries bottom (most complete) datastore
 	"""
 	__slots__ = ()
@@ -145,13 +146,42 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]
 		return False
 	
 	
+	async def stat(self, key: datastore.Key) -> MD:
+		"""Returns the metadata of the object named by key. Checks each
+		datastore in order."""
+		metadata: typing.Optional[MD] = None
+		exceptions: typing.List[KeyError] = []
+		
+		# Take snapshot of store list so that the list will remain consistent
+		# during the following iteration, even as other tasks may run
+		# during `await`/`async with`
+		stores: typing.List[DS] = self._stores.copy()
+		for store in stores:
+			try:
+				metadata_: MD = await store.stat(key)  # type: ignore[assignment] # noqa: F821
+			except KeyError as exc:
+				exceptions.append(exc)
+			else:
+				metadata = metadata_
+				break
+		if metadata is None:
+			raise trio.MultiError(exceptions)
+		
+		return metadata
+	
+	
 	async def aclose(self) -> None:
 		"""Closes and removes all added datastores"""
 		await self._stores_cleanup()
 
 
 class BinaryAdapter(
-		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		_Adapter[
+			datastore.abc.BinaryDatastore,
+			datastore.util.StreamMetadata,
+			datastore.abc.ReceiveStream,
+			bytes
+		],
 		datastore.abc.BinaryAdapter
 ):
 	__slots__ = ("_stores",)
@@ -161,6 +191,7 @@ class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
 			datastore.abc.ObjectDatastore[T_co],
+			datastore.util.ChannelMetadata,
 			datastore.abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],

@@ -5,6 +5,8 @@ import typing
 
 import trio.abc
 
+from . import metadata
+
 T    = typing.TypeVar("T")
 T_co = typing.TypeVar("T_co", covariant=True)
 U_co = typing.TypeVar("U_co", covariant=True)
@@ -38,41 +40,10 @@ class _ChannelSharedBase:
 		self.refcount = 1
 
 
-class ReceiveChannel(trio.abc.ReceiveChannel[T_co], typing.Generic[T_co]):
-	"""A slightly extended version of `trio`'s standard interface for receiving object streams.
-	
-	Attributes
-	----------
-	count
-		The number of objects that will be returned, or `None` if unavailable
-	atime
-		Time of the entry's last access (before the current one) in seconds
-		since the Unix epoch, or `None` if unkown
-	mtime
-		Time of the entry's last modification in seconds since the Unix epoch,
-		or `None` if unknown
-	btime
-		Time of entry creation in seconds since the Unix epoch, or `None`
-		if unknown
-	"""
-	__slots__ = ("count", "atime", "mtime", "btime")
-	
-	# The total length of this stream (if available)
-	count: typing.Optional[int]
-	
-	# The backing record's last access time
-	atime: typing.Optional[typing.Union[int, float]]
-	# The backing record's last modification time
-	mtime: typing.Optional[typing.Union[int, float]]
-	# The backing record's creation (“birth”) time
-	btime: typing.Optional[typing.Union[int, float]]
-	
-
-	def __init__(self):
-		self.count = None
-		self.atime = None
-		self.mtime = None
-		self.btime = None
+class ReceiveChannel(trio.abc.ReceiveChannel[T_co], metadata.ChannelMetadata, typing.Generic[T_co]):
+	"""A slightly extended version of `trio`'s standard interface for receiving object streams."""
+	__doc__ += "\n\n" + metadata.ChannelMetadata.__doc__
+	__slots__ = ()
 
 	
 	async def collect(self) -> typing.List[T_co]:
@@ -505,41 +476,10 @@ def receive_channel_from(channel: ArbitraryReceiveChannel[T_co]) -> ReceiveChann
 
 
 
-class ReceiveStream(trio.abc.ReceiveStream):
-	"""A slightly extended version of `trio`'s standard interface for receiving byte streams.
-	
-	Attributes
-	----------
-	size
-		The size of the entire stream data in bytes, or `None` if unavailable
-	atime
-		Time of the entry's last access (before the current one) in seconds
-		since the Unix epoch, or `None` if unkown
-	mtime
-		Time of the entry's last modification in seconds since the Unix epoch,
-		or `None` if unknown
-	btime
-		Time of entry creation in seconds since the Unix epoch, or `None`
-		if unknown
-	"""
-	__slots__ = ("size", "atime", "mtime", "btime")
-	
-	# The total length of this stream (if available)
-	size: typing.Optional[int]
-	
-	# The backing record's last access time
-	atime: typing.Optional[typing.Union[int, float]]
-	# The backing record's last modification time
-	mtime: typing.Optional[typing.Union[int, float]]
-	# The backing record's creation (“birth”) time
-	btime: typing.Optional[typing.Union[int, float]]
-	
-	
-	def __init__(self):
-		self.size  = None
-		self.atime = None
-		self.mtime = None
-		self.btime = None
+class ReceiveStream(trio.abc.ReceiveStream, metadata.StreamMetadata):
+	"""A slightly extended version of `trio`'s standard interface for receiving byte streams."""
+	__doc__ += "\n\n" + metadata.StreamMetadata.__doc__
+	__slots__ = ()
 	
 	
 	async def collect(self) -> bytes:
