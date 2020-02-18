@@ -1,17 +1,17 @@
 import typing
 
-import datastore
-import datastore.abc
 import trio
 
-from . import _support
-from ._support import DS, RT
-
-
-__all__ = ["BinaryAdapter", "ObjectAdapter"]
-
-
+import datastore
+import datastore.abc
 import datastore.core.util.stream
+
+from . import _support
+from ._support import DS, RT, RV, T_co
+
+__all__ = ("BinaryAdapter", "ObjectAdapter")
+
+
 
 
 @typing.no_type_check
@@ -19,7 +19,7 @@ async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: d
 	await store.put(key, receive_stream)
 
 
-class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
+class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, RT, RV]):
 	"""Represents a hierarchical collection of datastores.
 
 	Each datastore is queried in order. This is helpful to organize access
@@ -36,8 +36,8 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		* contains : returns first found value
 		* query    : queries bottom (most complete) datastore
 	"""
+	__slots__ = ()
 	
-	@typing.no_type_check
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by key. Checks each datastore in order."""
 		value: typing.Optional[RT] = None
@@ -49,7 +49,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				value_: RT = await store.get(key)  # type: ignore[assigment] # noqa: F821
+				value_: RT = await store.get(key)  # type: ignore[assignment] # noqa: F821
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
@@ -59,26 +59,46 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 			raise trio.MultiError(exceptions)
 		
 		# Add model to lower stores only
-		if isinstance(self._stores[0], datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		result_stream: typing.Union[
+			datastore.core.util.stream.TeeingReceiveStream,
+			datastore.core.util.stream.TeeingReceiveChannel[T_co]
+		]
+		if isinstance(self, datastore.abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(
+				value  # type: ignore[arg-type] # noqa: F821
+			)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
+				value  # type: ignore[arg-type] # noqa: F821
+			)
 		
 		for store2 in stores:
 			if store is store2:
 				break
 			result_stream.start_task_soon(run_put_task, store2, key)
 		
-		return result_stream
+		return result_stream  # type: ignore[return-value] # noqa: F723
 	
 	
-	@typing.no_type_check
+	async def get_all(self, key: datastore.Key) -> RV:
+		"""Return the object named by key. Checks each datastore in order."""
+		return await (await self.get(key)).collect()  # type: ignore[return-value] # noqa: F723
+	
+	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		"""Stores the object in all underlying datastores."""
-		if isinstance(self._stores[0], datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		result_stream: typing.Union[
+			datastore.core.util.stream.TeeingReceiveStream,
+			datastore.core.util.stream.TeeingReceiveChannel[T_co]
+		]
+		if isinstance(self, datastore.abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(
+				value  # type: ignore[arg-type] # noqa: F821
+			)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
+				value  # type: ignore[arg-type] # noqa: F821
+			)
 		
 		for store in self._stores:
 			if store is self._stores[-1]:
@@ -87,7 +107,6 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		await self._stores[-1].put(key, result_stream)
 	
 	
-	@typing.no_type_check
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object from all underlying datastores."""
 		error_count = 0
@@ -109,17 +128,15 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 			raise KeyError(key)
 	
 	
-	@typing.no_type_check
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`.
 		The last datastore will handle all query calls, as it has a (if not
 		the only) complete record of all objects.
 		"""
 		# queries hit the last (most complete) datastore
-		return await self._stores[-1].query(query)
+		return await self._stores[-1].query(query)  # type: ignore[attr-defined] # noqa: F821
 	
 	
-	@typing.no_type_check
 	async def contains(self, key: datastore.Key) -> bool:
 		"""Returns whether the object is in this datastore."""
 		for store in self._stores:
@@ -128,9 +145,20 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS]):
 		return False
 
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
-	...
+class BinaryAdapter(
+		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("_stores",)
 
 
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
-	...
+class ObjectAdapter(
+		typing.Generic[T_co],
+		_Adapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("_stores",)

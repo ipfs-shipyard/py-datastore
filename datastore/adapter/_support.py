@@ -2,15 +2,19 @@ import typing
 
 import datastore
 
+T_co = typing.TypeVar("T_co", covariant=True)
 
 #XXX: Maybe retry describing this cooperative multiple inheritance scheme if these are ever added:
 #
-#  * https://github.com/python/mypy/issues/7191 (Mixin classes in general)
 #  * https://github.com/python/mypy/issues/7790 (Associated types)
 #  * https://github.com/python/mypy/issues/7791 (Types of generic classes)
-DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
-DA = typing.TypeVar("DA", datastore.abc.BinaryAdapter,   datastore.abc.ObjectAdapter)
-RT = typing.TypeVar("RT", datastore.abc.ReceiveStream,   datastore.abc.ReceiveChannel)
+DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore,
+                    datastore.abc.ObjectDatastore[T_co])  # type: ignore[valid-type] # noqa: F821
+DA = typing.TypeVar("DA", datastore.abc.BinaryAdapter,
+                    datastore.abc.ObjectAdapter[T_co, T_co])  # type: ignore[valid-type] # noqa: F821, E501
+RT = typing.TypeVar("RT", datastore.abc.ReceiveStream,
+                    datastore.abc.ReceiveChannel[T_co])  # type: ignore[valid-type] # noqa: F821
+RV = typing.TypeVar("RV", bytes, typing.List[T_co])  # type: ignore[valid-type] # noqa: F821
 
 
 # Workaround for https://github.com/python/mypy/issues/708
@@ -29,6 +33,7 @@ class FunctionProperty(typing.Generic[T]):
 
 class DatastoreCollectionMixin(typing.Generic[DS]):
 	"""Represents a collection of datastores."""
+	__slots__ = ()
 	
 	_stores: typing.List[DS]
 	

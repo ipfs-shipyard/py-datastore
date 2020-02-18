@@ -6,6 +6,8 @@ import trio
 
 from . import key as key_
 from . import query as query_
+
+
 class util:  # noqa
 	from .util import stream
 
@@ -46,6 +48,8 @@ class Datastore(typing.Generic[T_co]):
 	databases where fields should be decomposed into columns), particularly to
 	support queries efficiently.
 	"""
+	
+	__slots__ = ()
 	
 	# Some possibly useful types (assigned at the end of this file)
 	ADAPTER_T: type
@@ -194,6 +198,8 @@ class Datastore(typing.Generic[T_co]):
 
 class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Stores nothing, but conforms to the API. Useful to test with."""
+	
+	__slots__ = ()
 
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
 		"""Unconditionally raise `KeyError`"""
@@ -215,6 +221,8 @@ class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 
 class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	"""Simple straw-man in-memory datastore backed by nested dicts."""
+	
+	__slots__ = ("_items",)
 	
 	_items: typing.Dict[str, typing.Dict[key_.Key, typing.List[T_co]]]
 	
@@ -339,6 +347,10 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	data themselves; instead, they delegate storage to an underlying child
 	datastore. The default implementation just passes all calls to the child.
 	"""
+	__slots__ = ("child_datastore",)
+	
+	FORWARD_CONTAINS: bool = False
+	FORWARD_GET_ALL:  bool = False
 	
 	child_datastore: Datastore[U_co]
 	
@@ -349,15 +361,20 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 	
 	# default implementation just passes all calls to child
 	async def get(self, key: key_.Key) -> util.stream.ReceiveChannel[T_co]:
-		"""Returns the object named by `key` or raises `KeyError` if it does
-		   not exist.
+		"""Returns a stream of objects named by `key` or raises `KeyError` if
+		   no such value exists.
 
 		Default shim implementation simply returns ``child_datastore.get(key)``
 		Override to provide different functionality, for example::
 
-			def get(self, key):
-			  value = self.child_datastore.get(key)
-			  return json.loads(value)
+			async def get(self, key):
+				# Drop first item returned by child
+				value = await self.child_datastore.get(key)
+				try:
+					await self.child_datastore.receive()
+				except trio.EndOfChannel:
+					pass
+				return value
 
 		Arguments
 		---------
@@ -366,20 +383,15 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		"""
 		# Cast the following so that we can have child object stores with
 		# types different from their parent
-		# (It's basically the callers job to ensure that the datastore adapter
-		#  used can in fact perform this conversion.)
+		# (It's the caller's job to ensure that the datastore adapter used can
+		#  in fact perform this conversion.)
 		return typing.cast(util.stream.ReceiveChannel[T_co], await self.child_datastore.get(key))
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
 		"""Stores the object `value` named by `key`.
 		
-		Default shim implementation simply calls ``child_datastore.put(key, value)``
-		Override to provide different functionality, for example::
-		
-			def put(self, key, value):
-			  value = json.dumps(value)
-			  self.child_datastore.put(key, value)
+		Default shim implementation simply calls ``child_datastore.put(key, value)``.
 		
 		Arguments
 		---------
@@ -397,9 +409,11 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 
 		Default shim implementation simply calls ``child_datastore.delete(key)``
 		Override to provide different functionality.
-
-		Args:
-		  key: Key naming the object to remove.
+		
+		Arguments
+		---------
+		key
+			Key naming the object to remove.
 		"""
 		await self.child_datastore.delete(key)
 	
@@ -423,15 +437,52 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		return await self.child_datastore.query(query)
 	
 	
+	async def get_all(self, key: key_.Key) -> typing.List[T_co]:
+		"""Returns the objects named by `key` or raises `KeyError` if no such
+		   value exists.
+		
+		Default shim implementation simply returns ``child_datastore.get_all(key)``
+		if ``FORWARD_GET_ALL`` is `True`, ``(await get(key)).collect()`` otherwise.
+		
+		Override to provide different functionality, for example::
+		
+			async def get_all(self, key):
+				# Drop first item returned by child
+				value = await self.child_datastore.get_all(key)
+				return value[1:]
+		
+		Arguments
+		---------
+		key
+			Key naming the object to retrieve
+		"""
+		if self.FORWARD_GET_ALL:
+			value = await self.child_datastore.get_all(key)
+		else:
+			value = await Datastore.get_all(typing.cast(Datastore[U_co], self), key)
+		
+		# Cast the following so that we can have child object stores with
+		# types different from their parent
+		# (It's the caller's job to ensure that the datastore adapter used can
+		#  in fact perform this conversion.)
+		return typing.cast(typing.List[T_co], value)
+	
+	
 	async def contains(self, key: key_.Key) -> bool:
 		"""Returns whether any object named by `key` exists
+		
+		Default shim implementation simply returns ``child_datastore.contains(key)``
+		if ``FORWARD_CONTAINS`` is `True`, ``not (get(key) raises KeyError)`` otherwise.
 		
 		Arguments
 		---------
 		key
 			Key naming the object to check.
 		"""
-		return await self.child_datastore.contains(key)
+		if self.FORWARD_CONTAINS:
+			return await self.child_datastore.contains(key)
+		else:
+			return await Datastore.contains(self, key)
 
 
 Datastore.ADAPTER_T = Adapter

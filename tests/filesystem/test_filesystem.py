@@ -1,5 +1,5 @@
-import tempfile
 import os.path
+import tempfile
 
 import pytest
 import trio.testing

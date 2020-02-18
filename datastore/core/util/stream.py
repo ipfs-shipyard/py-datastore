@@ -5,8 +5,6 @@ import typing
 
 import trio.abc
 
-
-
 T    = typing.TypeVar("T")
 T_co = typing.TypeVar("T_co", covariant=True)
 U_co = typing.TypeVar("U_co", covariant=True)

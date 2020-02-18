@@ -2,8 +2,7 @@ import typing
 
 import datastore
 
-
-__all__ = ["ObjectDirectorySupport", "ObjectDatastore"]
+__all__ = ("ObjectDirectorySupport", "ObjectDatastore")
 
 
 T_co = typing.TypeVar("T_co", covariant=True)
@@ -153,6 +152,10 @@ class ObjectDatastore(
 		>>> rds.get(a)
 		[]
 	"""
+	__slots__ = ()
+	
+	FORWARD_CONTAINS = True
+	FORWARD_GET_ALL  = True
 	
 	
 	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co]) -> None:
