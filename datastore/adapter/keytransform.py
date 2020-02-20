@@ -389,18 +389,22 @@ class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 		sharding_key = (
 			sharding_key
 			if sharding_key is not None
-			else cls._default_sharding_key # type: ignore[attr-defined]
+			else cls._default_sharding_key  # type: ignore[attr-defined] # noqa: F821
 		)
 		default_sharding_func = (
 			default_sharding_func
 			if default_sharding_func is not None
-			else f"{cls.prefix}{cls._default_sharding_func}" # type: ignore[attr-defined]
+			else f"{cls.prefix}{cls._default_sharding_func}"   # type: ignore[attr-defined] # noqa: F821
 		)
-		sharding_fn: KEY_TRANSFORM_T = await cls._parse_sharding_function( # type: ignore[attr-defined]
-			child_datastore, sharding_key, default_sharding_func
-		)
+		sharding_fn: KEY_TRANSFORM_T = await \
+			cls._parse_sharding_function(  # type: ignore[attr-defined] # noqa: F821
+				child_datastore, sharding_key, default_sharding_func
+			)
+
 		# Return an instantiated version of the class
-		return cls(child_datastore, *args, key_transform=sharding_fn, **kwargs) # type: ignore[attr-defined]
+		return cls(
+			child_datastore, *args, key_transform=sharding_fn, **kwargs
+			)  # type: ignore[attr-defined] # noqa: F821
 
 	@staticmethod
 	def _prefix(key: datastore.Key, length: int) -> datastore.Key:
@@ -452,11 +456,15 @@ class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 			An internal error occurred
 		"""
 
+		prefix: str = cls.prefix  # type: ignore[attr-defined] # noqa: F821
+
 		sharding_func: str
 		need_to_store_sharding_func: bool = False
 		try:
 			# Try reading existing sharding func used
-			sharding_func = next(iter(await child_datastore.get_all(sharding_key))) # type: ignore[assignment]
+			sharding_func = next(   # type: ignore[assignment] # noqa: F821
+				iter(await child_datastore.get_all(sharding_key))
+			)
 		except KeyError:
 			# Use the given default sharding func
 			sharding_func = default_sharding_func
@@ -470,18 +478,18 @@ class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 
 		# Returns a 3-tuple containing the part before the separator,
 		# the separator itself, and the part after the separator
-		_, _, sharding_fn = sharding_func.partition(cls.prefix) # type: ignore[attr-defined]
+		_, _, sharding_fn = sharding_func.partition(prefix)
 
 		# Ensure proper format
 		if not sharding_fn:
-			raise Exception(f"Prefix ({cls.prefix}) was not present in {sharding_func}") # type: ignore[attr-defined]
-		
+			raise Exception(f"Prefix ({prefix}) was not present in {sharding_func}")
+
 		parts: list = sharding_fn.split("/")
 
 		if len(parts) != 3:
 			raise Exception(
-				f"invalid shard identifier: {sharding_fn}.\n" # type: ignore[attr-defined]
-				f"Expecting form: {cls.prefix}/version/function_name/key_length"
+				f"invalid shard identifier: {sharding_fn}.\n"
+				f"Expecting form: {prefix}/version/function_name/key_length"
 			)
 
 		version, function_name, length = parts
@@ -495,9 +503,9 @@ class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 			raise Exception(f"Invalid parameter: {length}. Should be integer representing `key_length`.")
 
 		funcs: dict = {
-			"prefix": cls._prefix, # type: ignore[attr-defined]
-			"suffix": cls._suffix, # type: ignore[attr-defined]
-			"next-to-last": cls._next_to_last # type: ignore[attr-defined]
+			"prefix": cls._prefix,  # type: ignore[attr-defined] # noqa: F821
+			"suffix": cls._suffix,  # type: ignore[attr-defined] # noqa: F821
+			"next-to-last": cls._next_to_last  # type: ignore[attr-defined] # noqa: F821
 		}
 
 		try:
@@ -507,7 +515,7 @@ class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 
 		if need_to_store_sharding_func:
 			# All checks have been passed, put in datastore, remembering it for subsequent use of this repo
-			await child_datastore.put(sharding_key, [sharding_func]) # type: ignore[list-item]
+			await child_datastore.put(sharding_key, [sharding_func])  # type: ignore[list-item] # noqa: F821
 
 		return functools.partial(func, length=length)
 
@@ -526,7 +534,7 @@ class BinaryFlatFSAdapter(
 
 class ObjectFlatFSAdapter(
 		typing.Generic[T_co],
-		ObjectFlatFSAdapter[
+		_FlatFSAdapter[
 			datastore.abc.ObjectDatastore[T_co],
 			datastore.abc.ReceiveChannel[T_co],
 			typing.List[T_co]
@@ -534,4 +542,3 @@ class ObjectFlatFSAdapter(
 		datastore.abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn",)
-
