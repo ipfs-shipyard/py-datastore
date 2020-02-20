@@ -2,8 +2,8 @@ import collections
 import ctypes
 import ctypes.util
 import errno
-import typing
 import os
+import typing
 
 
 class Mask(ctypes.c_uint):

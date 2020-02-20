@@ -1,6 +1,7 @@
 import uuid
 from functools import total_ordering
-from datastore.core.util import fast_hash
+
+from datastore.core.util.fasthash import fast_hash
 
 
 class Namespace(str):

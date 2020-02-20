@@ -4,10 +4,9 @@ import typing
 import datastore
 
 from . import _support
-from ._support import DS, RT
+from ._support import DS, RT, RV, T_co
 
-
-__all__ = [
+__all__ = (
 	"BinaryAdapter",
 	"ObjectAdapter",
 	
@@ -22,15 +21,14 @@ __all__ = [
 	
 	"BinaryFlatFSAdapter",
 	"ObjectFlatFSAdapter"
-]
-
+)
 
 
 KEY_TRANSFORM_T = typing.Callable[[datastore.Key], datastore.Key]
 T = typing.TypeVar('T', bound="_Adapter")
 
 
-class _Adapter(typing.Generic[DS]):
+class _Adapter(typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that applies a transform on all incoming
 	   keys. For example:
 
@@ -51,58 +49,72 @@ class _Adapter(typing.Generic[DS]):
 		>>> ds.get(datastore.Key('/c/b/a'))
 		None
 	"""
+	__slots__ = ()
+	
+	FORWARD_CONTAINS = True
+	FORWARD_GET_ALL  = True
 	
 	key_transform_fn: _support.FunctionProperty[KEY_TRANSFORM_T]
 	
 	
-	@typing.no_type_check
 	def __init__(self, *args, key_transform: KEY_TRANSFORM_T = (lambda k: k), **kwargs):
 		"""Initializes KeyTransformDatastore with `keytransform` function."""
 		self.key_transform_fn = key_transform
-		super().__init__(*args, **kwargs)
+		super().__init__(*args, **kwargs)  # type: ignore[call-arg] # noqa: F821
 	
 	
-	@typing.no_type_check
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by keytransform(key)."""
-		return await super().get(self.key_transform_fn(key))
+		return await super().get(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
 	
 	
-	@typing.no_type_check
+	async def get_all(self, key: datastore.Key) -> RV:
+		"""Return the object named by keytransform(key)."""
+		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+	
+	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		"""Stores the object names by keytransform(key)."""
-		await super()._put(self.key_transform_fn(key), value)
+		await super()._put(self.key_transform_fn(key), value)  # type: ignore[misc] # noqa: F821
 	
 	
-	@typing.no_type_check
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object named by keytransform(key)."""
-		await super().delete(self.key_transform_fn(key))
+		await super().delete(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
 	
 	
-	@typing.no_type_check
 	async def contains(self, key: datastore.Key) -> bool:
 		"""Returns whether the object named by key is in this datastore."""
-		return await super().contains(self.key_transform_fn(key))
+		return await super().contains(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
 	
 	
-	@typing.no_type_check
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		query = query.copy()
 		query.key = self.key_transform_fn(query.key)
-		return await super().query(query)
+		return await super().query(query)  # type: ignore[misc] # noqa: F821
 
 
-class BinaryAdapter(_Adapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):
-	...
+class BinaryAdapter(
+		_Adapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("key_transform_fn",)
 
 
-class ObjectAdapter(_Adapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):
-	...
+class ObjectAdapter(
+		typing.Generic[T_co],
+		_Adapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("key_transform_fn",)
 
 
-class _LowercaseKeyAdapter(_Adapter[DS], typing.Generic[DS]):
+class _LowercaseKeyAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that lowercases all incoming keys.
 	
 	For example:
@@ -125,6 +137,7 @@ class _LowercaseKeyAdapter(_Adapter[DS], typing.Generic[DS]):
 		>>> lds.get(datastore.Key('HeLlO'))
 		'world'
 	"""
+	__slots__ = ()
 	
 	def __init__(self, *args, **kwargs):
 		"""Initializes KeyTransformDatastore with `key_transform` function."""
@@ -136,15 +149,26 @@ class _LowercaseKeyAdapter(_Adapter[DS], typing.Generic[DS]):
 		return datastore.Key(str(key).lower())
 
 
-class BinaryLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
-	...
+class BinaryLowercaseKeyAdapter(
+		_LowercaseKeyAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("key_transform_fn",)
 
 
-class ObjectLowercaseKeyAdapter(_LowercaseKeyAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
-	...
+class ObjectLowercaseKeyAdapter(
+		typing.Generic[T_co],
+		_LowercaseKeyAdapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("key_transform_fn",)
 
 
-class _NamespaceAdapter(_Adapter[DS], typing.Generic[DS]):
+class _NamespaceAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that namespaces all incoming keys.
 
 	   For example:
@@ -167,6 +191,7 @@ class _NamespaceAdapter(_Adapter[DS], typing.Generic[DS]):
 		>>> ds.get(datastore.Key('/a/b/c/d'))
 		'cd'
 	"""
+	__slots__ = ()
 	
 	namespace: datastore.Key
 
@@ -180,15 +205,26 @@ class _NamespaceAdapter(_Adapter[DS], typing.Generic[DS]):
 		return self.namespace.child(key)
 
 
-class BinaryNamespaceAdapter(_NamespaceAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
-	...
+class BinaryNamespaceAdapter(
+		_NamespaceAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("key_transform_fn", "namespace",)
 
 
-class ObjectNamespaceAdapter(_NamespaceAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
-	...
+class ObjectNamespaceAdapter(
+		typing.Generic[T_co],
+		_NamespaceAdapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("key_transform_fn", "namespace",)
 
 
-class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
+class _NestedPathAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
 
 	Incoming keys are sharded into nested namespaces. The idea is to use the key
@@ -213,6 +249,7 @@ class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
 		>>> ds.get(datastore.Key('/ab/ca/bc/abc'))
 		2
 	"""
+	__slots__ = ()
 
 	_default_depth:  int = 3
 	_default_length: int = 2
@@ -287,15 +324,26 @@ class _NestedPathAdapter(_Adapter[DS], typing.Generic[DS]):
 		return '/'.join(components)
 
 
-class BinaryNestedPathAdapter(_NestedPathAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
-	...
+class BinaryNestedPathAdapter(
+		_NestedPathAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")
 
 
-class ObjectNestedPathAdapter(_NestedPathAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
-	...
+class ObjectNestedPathAdapter(
+		typing.Generic[T_co],
+		_NestedPathAdapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")
 
 
-class _FlatFSAdapter(_Adapter[DS], typing.Generic[DS]):
+class _FlatFSAdapter(_Adapter[DS, RT, RV], typing.Generic[DS, RT, RV]):
 	"""Represents a simple DatastoreAdapter that shards/namespaces incoming keys.
 
 	Incoming keys are sharded into namespaces according to specifications
@@ -468,9 +516,22 @@ class _FlatFSAdapter(_Adapter[DS], typing.Generic[DS]):
 		raise NotImplementedError()
 
 
-class BinaryFlatFSAdapter(_FlatFSAdapter[datastore.abc.BinaryDatastore], datastore.abc.BinaryAdapter):  # noqa: E501
-	...
+
+class BinaryFlatFSAdapter(
+		_FlatFSAdapter[datastore.abc.BinaryDatastore, datastore.abc.ReceiveStream, bytes],
+		datastore.abc.BinaryAdapter
+):
+	__slots__ = ("key_transform_fn",)
 
 
-class ObjectFlatFSAdapter(_FlatFSAdapter[datastore.abc.ObjectDatastore], datastore.abc.ObjectAdapter):  # noqa: E501
-	...
+class ObjectFlatFSAdapter(
+		typing.Generic[T_co],
+		ObjectFlatFSAdapter[
+			datastore.abc.ObjectDatastore[T_co],
+			datastore.abc.ReceiveChannel[T_co],
+			typing.List[T_co]
+		],
+		datastore.abc.ObjectAdapter[T_co, T_co]
+):
+	__slots__ = ("key_transform_fn",)
+

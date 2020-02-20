@@ -1,11 +1,11 @@
-import tempfile
 import os.path
+import tempfile
 
 import pytest
 import trio.testing
-from datastore.core.test.conftest import DatastoreTests
 
 from datastore.filesystem import FileSystemDatastore
+from tests.conftest import DatastoreTests
 
 
 @pytest.fixture

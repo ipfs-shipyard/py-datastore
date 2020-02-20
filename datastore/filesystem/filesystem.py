@@ -11,7 +11,6 @@ import datastore.abc
 
 from .util import statx
 
-
 # Make default buffer larger to try to compensate for the thread switching overhead
 DEFAULT_BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE * 10
 

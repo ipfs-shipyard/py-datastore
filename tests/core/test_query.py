@@ -1,11 +1,11 @@
-import unittest
 import hashlib
 import time
+import unittest
 
 import pytest
 
 from datastore.core.key import Key
-from datastore.core.query import Filter, Order, Query, Cursor
+from datastore.core.query import Cursor, Filter, Order, Query
 
 
 def version_objects():

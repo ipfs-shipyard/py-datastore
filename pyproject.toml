@@ -1,6 +1,6 @@
 [build-system]
-requires = ["flit"]
-build-backend = "flit.buildapi"
+requires = ["flit_core ~= 2.0"]
+build-backend = "flit_core.buildapi"
 
 [tool.flit.metadata]
 module = "datastore"
@@ -11,21 +11,18 @@ keywords     = "ipfs datastore database development"
 license      = "MIT License"
 description-file = "README.md"
 
-# Unfortunately these currently need to be duplicated from `requirements.txt`
 requires-python = ">=3.7"
 
+# Keep this in sync with `tox.deps` of “tox.ini”
 requires = [
-	"trio~=0.11.0"
+	"trio ~= 0.11.0"
 ]
 
 classifiers = [
 	"Development Status :: 3 - Alpha",
 	"Intended Audience :: Developers",
 	"Intended Audience :: Information Technology",
-	"Intended Audience :: Science/Research",
 
-	"Topic :: Communications :: File Sharing",
-	"Topic :: Internet",
 	"Topic :: Scientific/Engineering",
 	"Topic :: System :: Filesystems",
 
@@ -35,8 +32,26 @@ classifiers = [
 	# Specify the Python versions you support here. In particular, ensure
 	# that you indicate whether you support Python 2, Python 3 or both.
 	"Programming Language :: Python :: 3.7",
-	"Programming Language :: Python :: 3 :: Only"
+	"Programming Language :: Python :: 3.8",
+	"Programming Language :: Python :: 3 :: Only",
+	
+	# This package has type annotations
+	"Typing :: Typed"
 ]
 
-#[tool.flit.metadata.urls]
+[tool.flit.metadata.urls]
+Chat = "https://matrix.to/#/!BjPVgBWvlihAKfBaaQ:ninetailed.ninja?via=ninetailed.ninja&via=matrix.org&via=librem.one"
 #Documentation = ""
+
+[tool.isort]
+known_third_party = [
+	"pytest"
+]
+
+skip = [
+	".tox",
+	"datastore/__init__.py",
+	"datastore/abc.py",
+	"datastore/typing.py",
+	"datastore/util.py"
+]

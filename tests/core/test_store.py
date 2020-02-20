@@ -1,18 +1,14 @@
 import importlib
 import logging
-from typing import Callable, List, Tuple, Type, TypeVar, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, List, Tuple, Type, TypeVar, Union
 
 import pytest
 import trio.testing
 
-from datastore import BinaryDictDatastore, ObjectDictDatastore
-from datastore import BinaryNullDatastore, ObjectNullDatastore
-from datastore import Key
-from datastore import Query
-
 import datastore.adapter.directory
 import datastore.adapter.logging
-
+from datastore import (BinaryDictDatastore, BinaryNullDatastore, Key,
+                       ObjectDictDatastore, ObjectNullDatastore, Query)
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -153,6 +149,9 @@ async def test_keytransform_reverse_transform(Adapter, DictDatastore, encode_fn)
 	assert await ds.get_all(k1) == encode_fn('abc')
 	assert not await ds.contains(k2)
 	assert not await kt.contains(k1)
+	with pytest.raises(KeyError):
+		await (await kt.get(k1)).aclose()
+	assert await (await kt.get(k2)).collect() == encode_fn('abc')
 	assert await kt.get_all(k2) == encode_fn('abc')
 
 	await kt.put(k1, encode_fn('abc'))
