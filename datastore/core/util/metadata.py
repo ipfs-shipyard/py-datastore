@@ -25,11 +25,15 @@ class _MetadataBase:
 	# The backing record's creation (“birth”) time
 	btime: typing.Optional[typing.Union[int, float]]
 	
-	def __init__(self, *args, atime = None, mtime = None, btime = None, **kwargs):
+	def __init__(
+			self, *,
+			atime: typing.Optional[int] = None,
+			mtime: typing.Optional[int] = None,
+			btime: typing.Optional[int] = None,
+	):
 		self.atime = atime
 		self.mtime = mtime
 		self.btime = btime
-		super().__init__(*args, **kwargs)
 
 
 class ChannelMetadata(_MetadataBase):
@@ -42,7 +46,7 @@ class ChannelMetadata(_MetadataBase):
 	# The total length of this stream (if available)
 	count: typing.Optional[int]
 	
-	def __init__(self, *args, count = None, **kwargs):
+	def __init__(self, *args, count: typing.Optional[int] = None, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.count = count
 
@@ -50,13 +54,30 @@ class ChannelMetadata(_MetadataBase):
 class StreamMetadata(_MetadataBase):
 	__doc__ = _MetadataBase.__doc__[:-1] + """\
 	size
-		The size of the entire stream data in bytes, or `None` if unavailable
+		The si
+	__doc__: strze of the entire stream data in bytes, or `None` if unavailable
 	"""
 	__slots__ = ("size",)
 	
 	# The total length of this stream (if available)
 	size: typing.Optional[int]
 	
-	def __init__(self, *args, size = None, **kwargs):
+	def __init__(self, *args, size: typing.Optional[int] = None, **kwargs):
 		super().__init__(*args, **kwargs)
+		self.size = size
+
+
+class DatastoreMetadata:
+	"""
+	Attributes
+	----------
+	size
+		The size of the entire datastore in bytes, or `None` if unavailable
+	"""
+	__doc__: str
+	__slots__ = ("size",)
+	
+	size: typing.Optional[int]
+	
+	def __init__(self, *, size: typing.Optional[int] = None):
 		self.size = size
