@@ -244,11 +244,11 @@ class _WrapingTrioReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	
 	
 	def receive_nowait(self) -> T_co:
-		return self._source.receive_nowait()
+		return self._source.receive_nowait()  # type: ignore[attr-defined]  # noqa: F821
 	
 	
 	def clone(self) -> ReceiveChannel[T_co]:
-		return self.__class__(self._source.clone())
+		return self.__class__(self._source.clone())  # type: ignore[attr-defined]  # noqa: F821
 	
 	
 	async def aclose(self) -> None:

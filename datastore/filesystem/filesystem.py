@@ -1,19 +1,85 @@
+import copy
 import errno
 import io
+import json
 import os
 import pathlib
 import stat as stat_
+import tempfile
 import typing
 
 import trio
 
 import datastore
 import datastore.abc
+import datastore.util
 
-from .util import statx
+from .util import exchange, rename_noreplace, statx
+
+if typing.TYPE_CHECKING:
+	from typing_extensions import Literal as typing_Literal
+elif hasattr(typing, "Literal"):
+	from typing import Literal as typing_Literal
+else:
+	from typing import Union as typing_Literal
 
 # Make default buffer larger to try to compensate for the thread switching overhead
 DEFAULT_BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE * 10
+
+DEFAULT_STATS_KEY = datastore.Key("diskUsage.cache")
+
+ROOT_KEY = datastore.Key("/")
+
+
+async def run_blocking_intr(func, *args, **kwargs):
+	"""Short form for :func:`trio.run_sync_in_worker_thread`"""
+	def callback():
+		return func(*args, **kwargs)
+	return await trio.to_thread.run_sync(callback, cancellable=True)
+
+
+async def run_blocking_nointr(func, *args, **kwargs):
+	"""Short form for :func:`trio.run_sync_in_worker_thread`"""
+	def callback():
+		return func(*args, **kwargs)
+	return await trio.to_thread.run_sync(callback, cancellable=False)
+
+
+def move_to_tempfile_sync(
+		src: typing.Union[os.PathLike, str], *,
+		wait_for_src: bool = False,
+		suffix: str = "",
+		prefix: str = "",
+		dir: typing.Optional[typing.Union[os.PathLike, str]] = None
+) -> typing.Optional[pathlib.Path]:
+	"""Moves file to temporary file location
+	
+	Similar to the :func:`tempfile.mkstemp` function, but moves an existing
+	source file rather then creating a new one."""
+	for _ in range(tempfile.TMP_MAX):
+		tmp = pathlib.Path(tempfile.mktemp(suffix=suffix, prefix=prefix, dir=dir))
+		
+		try:
+			rename_noreplace.rename_noreplace(src, tmp)
+			return tmp  # Success
+		except FileExistsError:
+			pass  # Target file was created in the meantime
+		except FileNotFoundError:
+			if wait_for_src:
+				# Somebody else moved the file out already, give
+				# them extra time to move in the replacement
+				#
+				# If they died, those stats will be gone however…
+				os.sched_yield()
+			else:
+				return None
+	
+	return None
+
+
+@datastore.util.awaitable_to_context_manager
+async def make_named_tempfile(*args, **kwargs) -> 'trio._file_io.AsyncIOWrapper':
+	return trio.wrap_file(await run_blocking_nointr(tempfile.NamedTemporaryFile, *args, **kwargs))
 
 
 stat_result_t = typing.Union[os.stat_result, statx.stat_result]
@@ -82,12 +148,76 @@ class FileReader(datastore.abc.ReceiveStream):
 		file = await trio.open_file(filepath, "rb")
 		try:
 			# Query file stat data
-			stat = await trio.run_sync_in_worker_thread(statx.stat, file.fileno(), cancellable=True)
+			stat = await run_blocking_intr(statx.stat, file.fileno())
 			
 			return cls(file, **cls.stat_result_to_kwargs(stat))
 		except BaseException:
 			await file.aclose()
 			raise
+
+
+accuracy_t = typing_Literal["unknown", "initial-exact", "initial-approximate", "initial-timed-out"]
+
+
+class DatastoreMetadata(datastore.util.DatastoreMetadata):
+	__doc__ = datastore.util.DatastoreMetadata.__doc__[:-1] + """\
+	size_accuracy
+		The accuracy of the returned size value
+	"""
+	__slots__ = ("size_accuracy",)
+	
+	size_accuracy: accuracy_t
+	
+	def __init__(self, *args, size_accuracy: accuracy_t = "unknown", **kwargs):
+		super().__init__(*args, **kwargs)
+		self.size_accuracy = size_accuracy
+
+
+class Stats:
+	disk_usage: int = 0
+	accuracy: accuracy_t = "unknown"
+	can_merge: bool = True
+	mtime_ns: int = -1
+	
+	def __repr__(self):
+		return (f"{self.__class__.__qualname__}(disk_usage={self.disk_usage!r}, "
+		        f"accuracy={self.accuracy!r}, can_merge={self.can_merge!r}, "
+		        f"mtime_ns={self.mtime_ns!r})")
+	
+	def copy(self) -> 'Stats':
+		return copy.copy(self)
+	
+	@classmethod
+	def from_json(cls: 'typing.Type[Stats]', obj: dict) -> 'Stats':
+		self = cls()
+		self.disk_usage = int(obj.pop("diskUsage", self.disk_usage))
+		self.accuracy   = typing.cast(accuracy_t, str(obj.pop("accuracy", self.accuracy)))
+		self.can_merge  = bool(obj.pop("canMerge", False))
+		self.mtime_ns   = int(obj.pop("mtime", self.mtime_ns))
+		return self
+	
+	def to_json(self, mtime: bool = False) -> dict:
+		result = {
+			"diskUsage": self.disk_usage,
+			"accuracy": self.accuracy,
+			"canMerge": self.can_merge,
+		}
+		if mtime:
+			result["mtime"] = self.mtime_ns
+		return result
+	
+	def merge(self, base: 'Stats', remote: 'Stats') -> None:
+		self.disk_usage += remote.disk_usage - base.disk_usage
+		self.accuracy = remote.accuracy
+
+
+def check_dir_empty_sync(path: typing.Union[os.PathLike, str]) -> bool:
+	"""Synchroniously checks whether the given directory is empty."""
+	with os.scandir(path) as scanner:
+		for dent in scanner:
+			if dent.name not in (".", ".."):
+				return False
+	return True
 
 
 class FileSystemDatastore(datastore.abc.BinaryDatastore):
@@ -96,7 +226,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	FileSystemDatastore will store objects in independent files in the host's
 	filesystem. The FileSystemDatastore is initialized with a `root` path, under
 	which to store all objects. Each object will be stored under its own file:
-	`root`/`key`.obj
+	`root`/`key`.data
 
 	The `key` portion also replaces namespace parameter delimiters (:) with
 	slashes, creating several nested directories. For example, storing objects
@@ -109,17 +239,17 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 
 	will yield the file structure::
 
-		/data/Comedy/MontyPython/Actor/JohnCleese.obj
-		/data/Comedy/MontyPython/Sketch/ArgumentClinic.obj
-		/data/Comedy/MontyPython/Sketch/CheeseShop.obj
-		/data/Comedy/MontyPython/Sketch/CheeseShop/Character/Mousebender.obj
+		/data/Comedy/MontyPython/Actor/JohnCleese.data
+		/data/Comedy/MontyPython/Sketch/ArgumentClinic.data
+		/data/Comedy/MontyPython/Sketch/CheeseShop.data
+		/data/Comedy/MontyPython/Sketch/CheeseShop/Character/Mousebender.data
 
 	Implementation Notes:
 
-		Using the `.obj` extension gets around the ambiguity of having both a
+		Using the `.data` extension gets around the ambiguity of having both a
 		`CheeseShop` object and directory::
 
-			/data/Comedy/MontyPython/Sketch/CheeseShop.obj
+			/data/Comedy/MontyPython/Sketch/CheeseShop.data
 			/data/Comedy/MontyPython/Sketch/CheeseShop/
 
 
@@ -142,14 +272,26 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		None
 
 	"""
-
+	
+	_stats: Stats
+	_stats_lock: trio.Lock
+	_stats_prev: Stats
+	_stats_orig: typing.Optional[Stats] = None
+	
 	case_sensitive: bool
-	object_extension: str
+	object_extension: str = ".data"
+	stats: bool
+	stats_key: datastore.Key
 	remove_empty: bool
 	root_path: pathlib.PurePath
-
-	def __init__(self, root: typing.Union[os.PathLike, str], *,
-	             case_sensitive: bool = True, remove_empty: bool = True):
+	
+	
+	@classmethod
+	@datastore.util.awaitable_to_context_manager
+	async def create(cls, root: typing.Union[os.PathLike, str], *,
+	                 case_sensitive: bool = True, remove_empty: bool = True,
+	                 stats: bool = False, stats_key: datastore.Key = DEFAULT_STATS_KEY
+	) -> 'FileSystemDatastore':
 		"""Initialize the datastore with given root directory `root`.
 
 		Arguments
@@ -166,17 +308,313 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			system. While this is enabled every successful delete operation
 			will be followed by at least one extra context switch to invoke
 			the `rmdir` system call.
+		stats
+			Track summary statistics about the contents of the datastore,
+			currently only the total apparent size of all files on the disk is
+			tracked
+		stats_key
+			The key/filepath at which to persist statistics between runs
 		"""
 		if not root:
 			raise ValueError('root path must not be empty (use \'.\' for current directory)')
 		
-		root = pathlib.Path(root)
-		root.mkdir(parents=True, exist_ok=True)
-
-		self.object_extension = '.obj'
-		self.root_path = root
+		# Ensure target directory exists
+		await trio.Path(root).mkdir(parents=True, exist_ok=True)
+		
+		# Create instance
+		self = cls(_create_call=True)
+		
+		# Do the usual constructor stuff
+		self.root_path = pathlib.PurePath(root)
 		self.case_sensitive = bool(case_sensitive)
 		self.remove_empty = bool(remove_empty)
+		self.stats = bool(stats)
+		self.stats_key = datastore.Key(stats_key)
+		self._stats_lock = trio.Lock()
+		
+		# Read stats data if applicable
+		await self._read_stats()
+		
+		return self
+	
+	
+	def __init__(self, *, _create_call=False):
+		assert _create_call, "Use FileSystemDatastore.create(…) for instance creation"
+	
+	
+	async def _read_stats(self) -> None:
+		if not self.stats:
+			return  # Nothing to do
+		
+		# Start fresh
+		self._stats = Stats()
+		
+		# Try to read existing stats file
+		path = trio.Path(self.object_path(self.stats_key))
+		try:
+			async with await path.open() as stats_file:
+				self._stats = Stats.from_json(json.loads(await stats_file.read()))
+				self._stats.mtime_ns = (await run_blocking_intr(os.fstat, stats_file.fileno())).st_mtime_ns
+		except FileNotFoundError:
+			# At least set an appropriate accuracy value if there are no files yet
+			is_empty = await run_blocking_intr(check_dir_empty_sync, self.root_path)
+			if is_empty:
+				self._stats.disk_usage = 0
+				self._stats.accuracy   = "initial-exact"
+			else:
+				pass  #XXX: We could call `os.walk` here to get the initial size estimate…
+		
+		self._stats_prev = self._stats.copy()
+		
+		# This will synchronize our current state with the one on the disk
+		await self._flush_stats(expect_file=False)
+	
+	
+	def _flush_stats_sync(
+			self, write_restore_file: bool = False, expect_file: bool = True
+	) -> None:
+		"""Update the filesystem stats on the disk in a way that is safe for
+		concurrent access
+		
+		This function performs lots of synchronous I/O, call it from an I/O
+		thread only and ensure you hold :attr:`_stats_lock` while doing so!
+		
+		The general proceedure being a follows:
+		
+		1. Write the new/current stats to a temporary file
+		2. Atomically exchange ``diskUsage.cache`` and the temporary file
+		
+			* *Fallback if atomic exchange is not available on the host OS*:
+			  Move ``diskUsage.cache`` to new location and non-replacingly
+			  rename temporary file to ``diskUsage.cache`` (set a flag if the
+			  target file already exists by the time we try to move our's in)
+			* The primary issue with this variant is that the stats file will
+			  be gone (moved or unlinked) for a splitsecond before the new one
+			  has been moved in. If the program crashes between these two
+			  actions, we will loose some stats.
+		
+		3. Compare mtime of the moved/previous ``diskUsage.cache`` file to the
+		   file's value on startup
+		   
+			* If they do not match update the expected value and mtime from the
+			  moved file and retry from step 1
+			* In effect this constitutes a 3-way merge with our expected value
+			  as the base, the read value as the “remote” (cause somebody else
+			  must have written it) and our new value as “local”
+		
+		4. Check flag set by the exchange fallback code and continue as in
+		   step 3 if it is set (using the current ``diskUsage.cache`` file
+		   as the “remote”)
+		5. Success
+		"""
+		assert self._stats_lock.locked()
+		
+		unlink_paths: typing.List[pathlib.Path] = []
+		try:
+			path = pathlib.Path(self.object_path(self.stats_key))
+			path_restore = pathlib.Path(str(path) + "-restore")
+			path_dir     = path.parent
+			path_prefix  = path.name + ".tmp-"
+			
+			while True:
+				# Read restore file if it exists (works around non-cooperating
+				# implementations just overwriting everything blindly)
+				path_restore_tmp = move_to_tempfile_sync(
+					path_restore, dir=path_dir, prefix=path_prefix
+				)
+				if path_restore_tmp is not None:
+					unlink_paths.append(path_restore_tmp)
+					
+					restore_data  = json.loads(path_restore_tmp.read_bytes())
+					restore_orig  = Stats.from_json(restore_data.get("orig", {}))
+					restore_local = Stats.from_json(restore_data.get("local", {}))
+					
+					try:
+						with path.open() as remote_file:
+							restore_remote = Stats.from_json(json.loads(remote_file.read()))
+							restore_remote.mtime_ns = os.fstat(remote_file.fileno()).st_mtime_ns
+						
+						# Apply delta from current file to restore data
+						if not restore_remote.can_merge:
+							restore_local.merge(restore_orig, restore_remote)
+							self._stats_orig = restore_remote
+						else:
+							self._stats_orig = restore_orig
+					except FileNotFoundError:
+						pass
+					
+					new_stats = restore_local.copy()
+					# Apply delta from our value to restore data
+					new_stats.merge(self._stats_prev, self._stats)
+					
+					self._stats = new_stats
+					self._stats_prev = restore_local
+				
+				
+				with tempfile.NamedTemporaryFile(
+					mode     = "w",
+					encoding = "utf-8",
+					dir      = path_dir,
+					prefix   = path_prefix,
+					delete   = False
+				) as new_file:
+					# Remember the file's path so that we may unlink it when
+					# the time comes
+					new_path = pathlib.Path(self.root_path / new_file.name)
+					unlink_paths.append(new_path)
+					
+					# Write data
+					new_file.write(json.dumps(self._stats.to_json()))
+				
+				# Also remember the mtime after writing for later collision detection
+				new_path_mtime_ns: int = new_path.stat().st_mtime_ns
+				
+				need_move_retry: bool = False
+				old_path: typing.Optional[pathlib.Path] = None
+				try:
+					# Atomically exchange temporary and production file
+					exchange.exchange(path, new_path)
+					#  – The temporary file now contains the previous contents
+					old_path = new_path
+					#  – The target file has now been updated
+					self._stats.mtime_ns = new_path_mtime_ns
+				except (FileNotFoundError, AttributeError, NotImplementedError) as exc:
+					if not isinstance(exc, FileNotFoundError):
+						# Fallback code in case atomic exchange is not available
+						#
+						# The primary issue with this variant is that the stats file
+						# will be gone (moved or unlinked) for a splitsecond before
+						# the new one has been moved in. If the program crashes
+						# between these two actions, we loose the stats.
+						
+						# Move target file to temporary location
+						old_path = move_to_tempfile_sync(
+							path, wait_for_src=expect_file, dir=path_dir, prefix=path_prefix
+						)
+					
+					# This code applies both to the case of atomic exchange not being
+					# available and the target file being non-existant
+					try:
+						# Move created temporary file with our data to
+						# producation file location
+						rename_noreplace.rename_noreplace(new_path, path)
+						self._stats.mtime_ns = new_path_mtime_ns
+					except FileExistsError:
+						# Somebody else beat us to it, we'll need to incorporate
+						# their changes and retry
+						expect_file = True
+						need_move_retry = True
+				
+				if old_path is not None:
+					# Compare timestamp of swapped out file to the expected value
+					old_path_mtime_ns = old_path.stat().st_mtime_ns
+					
+					if old_path_mtime_ns != self._stats_prev.mtime_ns:
+						old_stats = Stats.from_json(json.loads(old_path.read_bytes()))
+						old_stats.mtime_ns = old_path_mtime_ns
+						cur_stats = self._stats.copy()
+						
+						# Apply delta to current stats (aka perform a “merge”)
+						if not old_stats.can_merge:
+							if self._stats_orig is not None:
+								self._stats.merge(self._stats_orig, old_stats)
+							self._stats_orig = old_stats
+						else:
+							self._stats.merge(self._stats_prev, old_stats)
+						
+						# Expect the stats data we just swapped in from now on
+						# and request a retry soon
+						self._stats_prev = cur_stats
+						self._stats_prev.mtime_ns = new_path_mtime_ns
+						continue
+				
+				if need_move_retry:
+					old_stats = Stats.from_json(json.loads(path.read_bytes()))
+					cur_stats = self._stats
+					
+					# Apply delta to current stats (aka perform a “merge”)
+					self._stats.merge(self._stats_prev, old_stats)
+					
+					# Expect the stats data we just swapped in from now on and
+					# request a retry soon
+					self._stats_prev = cur_stats
+					continue
+				
+				if write_restore_file:
+					assert self._stats_prev is not None
+					assert self._stats_orig is not None
+					
+					with tempfile.NamedTemporaryFile(
+						mode     = "w",
+						encoding = "utf-8",
+						dir      = path_dir,
+						prefix   = path_prefix,
+						delete   = False
+					) as new_restore_file:
+						# Remember the file's path so that we may unlink it when
+						# the time comes
+						new_restore_path = pathlib.Path(self.root_path / new_restore_file.name)
+						unlink_paths.append(new_restore_path)
+						
+						# Write data
+						new_restore_file.write(json.dumps({
+							"local": self._stats.to_json(mtime=True),
+							"prev":  self._stats_prev.to_json(mtime=True),
+							"orig":  self._stats_orig.to_json(mtime=True),
+						}))
+					
+					try:
+						# Move created temporary file with our data to
+						# producation file location
+						rename_noreplace.rename_noreplace(new_restore_path, path_restore)
+					except FileExistsError:
+						# Somebody else beat us to it, we'll need to incorporate
+						# their changes and retry
+						continue
+				
+				# Remember current snapshot as new base and return
+				self._stats_prev = self._stats.copy()
+				if self._stats_orig is None:
+					self._stats_orig = self._stats.copy()
+				return
+		finally:
+			# Clean up all temporary files created during the above
+			errors: typing.List[Exception] = []
+			for unlink_path in unlink_paths:
+				try:
+					unlink_path.unlink()
+				except FileNotFoundError:
+					pass
+				except Exception as exc:
+					errors.append(exc)
+			if errors:
+				if len(unlink_paths) == 1:
+					raise errors[0]
+				raise trio.MultiError(errors)
+	
+	
+	async def _flush_stats(
+			self, write_restore_file: bool = False, expect_file: bool = True
+	) -> None:
+		"""Flush the current stats to disk, handling potential write conflicts
+		in the process
+		
+		See :meth:`_flush_stats_sync` for all nitty gritty details on how
+		conflict resolution is performed.
+		"""
+		if not self.stats:
+			return  # Nothing to do
+		
+		async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+			await run_blocking_nointr(self._flush_stats_sync, write_restore_file, expect_file)
+	
+	
+	async def flush(self) -> None:
+		await self._flush_stats()
+	
+	
+	async def aclose(self) -> None:
+		await self._flush_stats(write_restore_file=True)
 	
 	
 	# object paths
@@ -265,7 +703,49 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
 	
 	
-	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveStream) -> None:
+	def _put_replace_with_stats_sync(
+			self,
+			source: typing.Union[os.PathLike, str],
+			target: typing.Union[os.PathLike, str]
+	) -> None:
+		target        = pathlib.Path(target)
+		target_dir    = target.parent
+		target_prefix = target.name + ".tmp-"
+		try:
+			# Atomically exchange temporary and production file
+			# (only works on Linux and macOS, but not *BSD and Windows, unfortunately)
+			exchange.exchange(source, target)
+			
+			# Do bookkeeping of the source file (now the former target file) that
+			# we're going to remove
+			if self.stats:
+				self._stats.disk_usage -= os.stat(source).st_size
+			os.unlink(source)
+		except (FileNotFoundError, AttributeError, NotImplementedError):
+			# Fallback code in case atomic exchange is not available or the target
+			# file was removed in the meantime
+			
+			while True:
+				# Move target file to temporary location
+				temp_path = move_to_tempfile_sync(target, dir=target_dir, prefix=target_prefix)
+				if temp_path is not None:
+					# Do bookkeeping of this file we're going to remove
+					if self.stats:
+						self._stats.disk_usage -= temp_path.stat().st_size
+					temp_path.unlink()
+				
+				try:
+					# Move created temporary file with our data to
+					# producation file location
+					rename_noreplace.rename_noreplace(source, target)
+					
+					break
+				except FileExistsError:
+					continue
+	
+	async def _put(
+			self, key: datastore.Key, value: datastore.abc.ReceiveStream, *, replace=True
+	) -> None:
 		"""Stores or replaces the data named by `key` with `value`
 		
 		Arguments
@@ -277,11 +757,27 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		
 		Raises
 		------
+		KeyError
+			The given `key` already exists and `replace` is not ``True``.
 		RuntimeError
-			The given ``key`` names a subtree, not a value OR the contains a
+			The given `key` names a subtree, not a value OR the contains a
 			value item as part of the key path
 		"""
+		async def receive_and_write(file, value):
+			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+			while chunk:
+				# Do bookkeeping
+				if self.stats:
+					async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+						self._stats.disk_usage += len(chunk)
+				
+				await file.write(chunk)
+				
+				chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+		
 		path = trio.Path(self.object_path(key))
+		path_dir    = path.parent
+		path_prefix = path.name + ".tmp-"
 		
 		# Ensure containing directory exists
 		parent = path.parent
@@ -293,15 +789,41 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			                   f"'{parent}' to not be a value") from exc
 		
 		try:
-			async with await trio.open_file(path, "wb") as file:
-				chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
-				while chunk:
-					await file.write(chunk)
-					
-					chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+			async with await path.open("xb") as file:
+				await receive_and_write(file, value)
 		except IsADirectoryError as exc:
 			# Should only happen if `object_extension` is `""`
 			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
+		except FileExistsError as exc:
+			# Error out if the target file already exists …
+			if not replace:
+				raise KeyError(key) from exc
+			
+			# … unless `replace` is True, then write to a temporary file instead
+			#   and later move it into place, overriding the previous file
+			async with make_named_tempfile(
+				mode="wb", dir=path_dir, prefix=path_prefix, delete=False
+			) as temp_file:
+				await receive_and_write(temp_file, value)
+			
+			if self.stats:
+				async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+					await run_blocking_nointr(self._put_replace_with_stats_sync, temp_file.name, path)
+			else:
+				await trio.Path(temp_file.name).replace(path)
+	
+	
+	def _delete_with_stats_sync(self, path: typing.Union[os.PathLike, str]) -> bool:
+		path = pathlib.Path(path)
+		path_dir    = path.parent
+		path_prefix = path.name + ".tmp-"
+		
+		temp_path = move_to_tempfile_sync(path, dir=path_dir, prefix=path_prefix)
+		if temp_path is None:
+			return False
+		self._stats.disk_usage -= temp_path.stat().st_size
+		temp_path.unlink()
+		return True
 	
 
 	async def delete(self, key: datastore.Key):
@@ -319,39 +841,43 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""
 		path = trio.Path(self.object_path(key))
 		
-		try:
-			await path.unlink()
-		except FileNotFoundError as exc:
-			raise KeyError(key) from exc
+		if self.stats:
+			async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+				if not await run_blocking_nointr(self._delete_with_stats_sync, path):
+					raise KeyError(key)
+		else:
+			try:
+				await path.unlink()
+			except FileNotFoundError as exc:
+				raise KeyError(key) from exc
 		
 		# Try to remove parent directories if they are empty
-		if not self.remove_empty:
-			return
-		try:
-			parent = path.parent
-			# Attempt to remove all parent directories as long as the
-			# parent directory is:
-			#  * … a sub-directory of `self.root_path` – checking whether
-			#    the path of that directory starts with `{self.root_path}/`.
-			#  * … not the same directory again – to ensure that pathlib's
-			#    special `Path(".").parent == Path(".")` behaviour doesn't
-			#    bite us. (This check may be unecessary / overly pendantic…)
-			# The loop is stopped when we either reach the root directory
-			# or receive an `ENOTEMPTY` error indicating that we tried to
-			# remove a directory that wasn't actually empty.
-			while str(parent).startswith(str(self.root_path) + os.path.sep) \
-			      and parent.parent != parent:
-				await parent.rmdir()
-				
-				parent = parent.parent
-		except OSError as exc:
-			if exc.errno == errno.ENOTEMPTY:
-				return
-			raise
+		if self.remove_empty:
+			try:
+				parent = path.parent
+				# Attempt to remove all parent directories as long as the
+				# parent directory is:
+				#  * … a sub-directory of `self.root_path` – checking whether
+				#    the path of that directory starts with `{self.root_path}/`.
+				#  * … not the same directory again – to ensure that pathlib's
+				#    special `Path(".").parent == Path(".")` behaviour doesn't
+				#    bite us. (This check may be unecessary / overly pendantic…)
+				# The loop is stopped when we either reach the root directory
+				# or receive an `ENOTEMPTY` error indicating that we tried to
+				# remove a directory that wasn't actually empty.
+				while str(parent).startswith(str(self.root_path) + os.path.sep) \
+				      and parent.parent != parent:
+					await parent.rmdir()
+					
+					parent = parent.parent
+			except OSError as exc:
+				if exc.errno == errno.ENOTEMPTY:
+					return
+				raise
 	
 	
 	async def stat(self, key: datastore.Key) -> datastore.util.StreamMetadata:
-		"""Returns the metadata of the data named by key, or raises KeyError otherwise.
+		"""Returns the metadata of the data named by key, or raises KeyError otherwise
 		
 		Arguments
 		---------
@@ -367,7 +893,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""
 		path = self.object_path(key)
 		try:
-			stat = await trio.run_sync_in_worker_thread(statx.stat, path, cancellable=True)
+			stat = await run_blocking_intr(statx.stat, path)
 			if stat_.S_ISDIR(stat.st_mode):
 				# Should hopefully only happen if `object_extension` is `""`
 				raise RuntimeError(f"Key '{key}' names a subtree, not a value")
@@ -375,3 +901,22 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			return datastore.util.StreamMetadata(**FileReader.stat_result_to_kwargs(stat))
 		except FileNotFoundError as exc:
 			raise KeyError(key) from exc
+	
+	
+	def datastore_stats(self, key: datastore.Key = ROOT_KEY) -> DatastoreMetadata:
+		"""Returns available metadata of this filesystem
+		
+		Unless stats are enabled this will not return any useful values.
+		
+		Arguments
+		---------
+		key
+			This parameter is ignored for leaf/backing datastores
+		"""
+		if self.stats:
+			return DatastoreMetadata(
+				size = self._stats.disk_usage,
+				size_accuracy = self._stats.accuracy,
+			)
+		else:
+			return DatastoreMetadata()
