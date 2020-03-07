@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import errno
 import io
 import json
@@ -183,19 +184,14 @@ class FileReader(datastore.abc.ReceiveStream):
 accuracy_t = typing_Literal["unknown", "initial-exact", "initial-approximate", "initial-timed-out"]
 
 
+@dataclasses.dataclass(frozen=True)
 class DatastoreMetadata(datastore.util.DatastoreMetadata):
-	__doc__ = datastore.util.DatastoreMetadata.__doc__[:-1] + """\
+	__doc__ = (datastore.util.DatastoreMetadata.__doc__ or "")[:-1] + """\
 	size_accuracy
 		The accuracy of the returned size value
 	"""
-	__slots__ = ("size_accuracy",)
 	
-	size_accuracy: accuracy_t
-	
-	def __init__(self, *args: typing.Any, size_accuracy: accuracy_t = "unknown",
-	             **kwargs: typing.Any):
-		super().__init__(*args, **kwargs)
-		self.size_accuracy = size_accuracy
+	size_accuracy: accuracy_t = "unknown"
 
 
 # work around GH/mypy/mypy#731: no recursive structural types yet
