@@ -79,7 +79,13 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	
 	def __init__(self, source: trio.abc.ReceiveChannel[T_co], buffer_size: int = 0, *,
 	             _shared: typing.Optional[_TeeingChannelShared[T_co]] = None):
-		super().__init__()
+		# Try to copy extra attributes from source channel
+		super().__init__(
+			count = getattr(source, "count", None),
+			atime = getattr(source, "atime", None),
+			mtime = getattr(source, "mtime", None),
+			btime = getattr(source, "btime", None),
+		)
 		
 		if _shared is not None:
 			self._shared = _shared
@@ -89,11 +95,6 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		self._shared.bufsize = buffer_size
 		self._shared.source  = source
 		
-		# Try to copy extra attributes from source channel
-		self.count = getattr(source, "count", None)
-		self.atime = getattr(source, "atime", None)
-		self.mtime = getattr(source, "mtime", None)
-		self.btime = getattr(source, "btime", None)
 		
 		self._closed = False
 		
@@ -276,8 +277,9 @@ class _WrapingIterReceiveChannelBase(ReceiveChannel[T_co], typing.Generic[T_co, 
 	_shared: _WrapingChannelShared[U_co]
 	
 	def __init__(self, source: typing.Optional[U_co], *,
+	             count: typing.Optional[int] = None,
 	             _shared: typing.Optional[_WrapingChannelShared[U_co]] = None):
-		super().__init__()
+		super().__init__(count=count)
 		
 		assert source is not None or _shared is not None
 		
@@ -366,9 +368,8 @@ class _WrapingAsyncIterReceiveChannel(
 		_WrapingIterReceiveChannelBase[T_co, typing.AsyncIterator[T_co]],
 		typing.Generic[T_co]
 ):
-	def __init__(self, source: typing.Optional[typing.AsyncIterable[T_co]],
-	             **kwargs: typing.Any):
-		super().__init__(source.__aiter__() if source is not None else None, **kwargs)
+	def __init__(self, source: typing.Optional[typing.AsyncIterable[T_co]]):
+		super().__init__(source.__aiter__() if source is not None else None)
 	
 	
 	async def _receive(self) -> T_co:
@@ -397,11 +398,9 @@ class _WrapingSyncIterReceiveChannel(
 		_WrapingIterReceiveChannelBase[T_co, typing.Iterator[T_co]],
 		typing.Generic[T_co]
 ):
-	def __init__(self, source: typing.Optional[typing.Iterable[T_co]],
-	             count_hint: typing.Optional[int] = None, **kwargs: typing.Any):
-		super().__init__(iter(source) if source is not None else None, **kwargs)
-		
-		self.count = count_hint
+	def __init__(self, source: typing.Optional[typing.Iterable[T_co]], *,
+	             count: typing.Optional[int] = None):
+		super().__init__(iter(source) if source is not None else None, count=count)
 	
 	
 	async def _receive(self) -> T_co:
@@ -465,7 +464,7 @@ def receive_channel_from(channel: ArbitraryReceiveChannel[T_co]) -> ReceiveChann
 		if isinstance(source2, collections.abc.Sequence):
 			count = len(source2)
 		
-		return _WrapingSyncIterReceiveChannel(source2, count)
+		return _WrapingSyncIterReceiveChannel(source2, count=count)
 	
 	assert False, "Unreachable code"
 
@@ -510,17 +509,19 @@ class TeeingReceiveStream(ReceiveStream):
 	_source:  typing.Optional[trio.abc.ReceiveStream]
 	
 	def __init__(self, source: trio.abc.ReceiveStream, buffer_size: int = 0):
-		super().__init__()
+		# Try to copy extra attributes from source stream
+		super().__init__(
+			size  = getattr(source, "size", None),
+			atime = getattr(source, "atime", None),
+			mtime = getattr(source, "mtime", None),
+			btime = getattr(source, "btime", None),
+		)
 		
 		self._bufsize = buffer_size
 		self._source  = source
 		self._closed  = False
 		
-		# Try to copy extra attributes from source stream
-		self.size  = getattr(source, "size", None)
-		self.atime = getattr(source, "atime", None)
-		self.mtime = getattr(source, "mtime", None)
-		self.btime = getattr(source, "btime", None)
+		
 		
 		# Create nursery without using a `async with`-statement
 		# (Only works because the `__aenter__`-call does not actually block on anything.)
@@ -649,8 +650,8 @@ class _WrapingIterReceiveStreamBase(ReceiveStream, typing.Generic[T_co]):
 	
 	_source: typing.Optional[T_co]
 	
-	def __init__(self, source: T_co):
-		super().__init__()
+	def __init__(self, source: T_co, *, size: typing.Optional[int] = None):
+		super().__init__(size=size)
 		
 		self._source = source
 		
@@ -756,10 +757,8 @@ class _WrapingAsyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.AsyncI
 
 
 class _WrapingSyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.Iterator[bytes]]):
-	def __init__(self, source: typing.Iterable[bytes], size_hint: typing.Optional[int]):
-		super().__init__(iter(source))
-		
-		self.size = size_hint
+	def __init__(self, source: typing.Iterable[bytes], *, size: typing.Optional[int] = None):
+		super().__init__(iter(source), size=size)
 	
 	
 	async def _receive(self, _: typing.Optional[int]) -> bytes:
@@ -833,6 +832,6 @@ def receive_stream_from(stream: ArbitraryReceiveStream) -> ReceiveStream:
 			size = source2.tell() - pos
 			source2.seek(pos, io.SEEK_SET)
 		
-		return _WrapingSyncIterReceiveStream(source2, size)
+		return _WrapingSyncIterReceiveStream(source2, size=size)
 	
 	assert False, "Unreachable code"
