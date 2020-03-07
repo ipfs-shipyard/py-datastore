@@ -9,6 +9,7 @@ from . import query as query_
 
 
 class util:  # noqa
+	from .util import decorator
 	from .util import metadata
 	from .util import stream
 
@@ -53,6 +54,14 @@ class Datastore(trio.abc.AsyncResource):
 	ADAPTER_T:  type
 	METADATA_T: type
 	RECEIVE_T:  type
+	
+	_DS = typing.TypeVar("_DS", bound="Datastore")
+	
+	
+	@classmethod
+	@util.decorator.awaitable_to_context_manager
+	async def create(cls: typing.Type[_DS], *args: typing.Any, **kwargs: typing.Any) -> _DS:
+		return cls(*args, **kwargs)  # type: ignore[call-arg]
 	
 	# Main API. Datastore implementations MUST implement these methods.
 	
