@@ -12,24 +12,21 @@ __all__ = [
 ]
 
 
+mount_item_t = typing.Tuple['mount_tree_t[DS]', typing.Optional[DS]]
+
+
+class mount_tree_t(typing.Dict[str, mount_item_t[DS]]):
+	...
+
 
 class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	__slots__ = ()
 	
-	# Cannot represent recursive types yet (https://github.com/python/mypy/issues/731)
-	MOUNTS_T = typing.Dict[  # type: ignore[misc] # noqa: F821
-		str,
-		typing.Tuple[
-			"_Adapter.MOUNTS_T",  # type: ignore[misc] # noqa: F821
-			typing.Optional[DS]  # type: ignore[misc] # noqa: F821
-		]
-	]
-	
-	mounts: MOUNTS_T
+	mounts: mount_tree_t[DS]
 	
 	
-	def __init__(self, *args, **kwargs):
-		self.mounts = {}
+	def __init__(self, *args: typing.Any, **kwargs: typing.Any):
+		self.mounts = mount_tree_t()
 	
 	
 	def _find_mountpoint(self, key: datastore.Key) \
@@ -56,21 +53,21 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
-		return await ds.get(subkey)  # type: ignore[return-value] # noqa: F723
+		return await ds.get(subkey)  # type: ignore[return-value]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
-		return await ds.get_all(subkey)  # type: ignore[return-value] # noqa: F723
+		return await ds.get_all(subkey)  # type: ignore[return-value]
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise RuntimeError(f"Cannot put key {key}: No datastore mounted at this path")
-		await ds.put(subkey, value)  # type: ignore[arg-type] # noqa: F821
+		await ds.put(subkey, value)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
@@ -91,7 +88,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
-		return await ds.stat(subkey)  # type: ignore[return-value] # noqa: F723
+		return await ds.stat(subkey)  # type: ignore[return-value]
 	
 	
 	def mount(self, prefix: datastore.Key, ds: DS) -> None:
@@ -100,13 +97,13 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		If a datastore is already mounted at the given key a :exc:`KeyError` is
 		raised.
 		"""
-		current:  _Adapter.MOUNTS_T = self.mounts
-		previous: _Adapter.MOUNTS_T
+		current:  mount_tree_t[DS] = self.mounts
+		previous: mount_tree_t[DS]
 		
 		# Walk and create all parent key parts
 		for part in map(str, prefix.list):
 			if part not in current:
-				current[part] = ({}, None)
+				current[part] = (mount_tree_t(), None)
 			previous = current
 			current  = current[part][0]
 		
@@ -126,10 +123,10 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		The returned datastore is not closed; it is the callers responsibility
 		to ensure this by using ``await m.unmount(key).aclose()`` or similar.
 		"""
-		current: _Adapter.MOUNTS_T = self.mounts
+		current: mount_tree_t[DS] = self.mounts
 		
 		# Walk and create all parent key parts
-		visited: typing.List[_Adapter.MOUNTS_T] = []
+		visited: typing.List[mount_tree_t[DS]] = []
 		for part in map(str, prefix.list):
 			if part not in current:
 				raise KeyError(prefix)
@@ -160,10 +157,10 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		unmounted: typing.List[DS] = []
 		
 		# Start at mount hierarchy root
-		current: _Adapter.MOUNTS_T = self.mounts
+		current: mount_tree_t[DS] = self.mounts
 		
 		# Walk and create all parent key parts
-		stack: typing.List[_Adapter.MOUNTS_T] = []
+		stack: typing.List[mount_tree_t[DS]] = []
 		while len(self.mounts) > 0 or len(stack) > 0:
 			try:
 				# Pop item from submounts map

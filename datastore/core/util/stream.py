@@ -35,7 +35,7 @@ class _ChannelSharedBase:
 	lock:     trio.Lock
 	refcount: int
 	
-	def __init__(self):
+	def __init__(self) -> None:
 		self.lock     = trio.Lock()
 		self.refcount = 1
 
@@ -85,7 +85,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			self._shared = _shared
 			return
 		
-		self._shared = _TeeingChannelShared() if _shared is None else _shared
+		self._shared = _TeeingChannelShared()
 		self._shared.bufsize = buffer_size
 		self._shared.source  = source
 		
@@ -109,17 +109,17 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			raise RuntimeError("Failed to initialize nursery synchronously")
 	
 	
-	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], T], *args) -> T:
-		async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug # noqa: F821
+	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], T],
+	                     *args: typing.Any) -> T:
+		async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug
 			send_channel, receive_channel = trio.open_memory_channel(self._shared.bufsize)
-			result = await self._shared.nursery.start(func, receive_channel, *args)
+			result: T = await self._shared.nursery.start(func, receive_channel, *args)
 			self._shared.channels.append(send_channel)
 		return result
 	
 	
-	def start_task_soon(
-			self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], typing.Any], *args
-	) -> None:
+	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], typing.Any],
+	                    *args: typing.Any) -> None:
 		# Doing this sync is just wrong, but we cannot block in this function…
 		self._shared.lock.acquire_nowait()
 		
@@ -135,16 +135,13 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		if self._closed:
 			raise trio.ClosedResourceError()
 		
-		try:
-			# Cast source value to ignore the possible `None` variant as the
-			# passed source value will be ignored if we provide `_shared`
-			source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
-			
-			return TeeingReceiveChannel(source, _shared=self._shared)
-		except BaseException:
-			raise
-		else:
-			self._shared.refcount += 1
+		# Cast source value to ignore the possible `None` variant as the
+		# passed source value will be ignored if we provide `_shared`
+		source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
+		
+		channel = TeeingReceiveChannel(source, _shared=self._shared)
+		self._shared.refcount += 1
+		return channel
 	
 	
 	async def receive(self) -> T_co:
@@ -155,7 +152,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		
 		try:
 			# Pass received value (or EOF) to waiting write tasks
-			async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug # noqa: F821
+			async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug
 				try:
 					value = await self._shared.source.receive()
 					for channel in self._shared.channels:
@@ -187,7 +184,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		raise trio.WouldBlock()
 	
 	
-	async def aclose(self, *, _mark_closed=True) -> None:
+	async def aclose(self, *, _mark_closed: bool = True) -> None:
 		if _mark_closed:
 			self._closed = True
 		
@@ -244,11 +241,11 @@ class _WrapingTrioReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	
 	
 	def receive_nowait(self) -> T_co:
-		return self._source.receive_nowait()  # type: ignore[attr-defined]  # noqa: F821
+		return self._source.receive_nowait()  # type: ignore[attr-defined, no-any-return]
 	
 	
 	def clone(self) -> ReceiveChannel[T_co]:
-		return self.__class__(self._source.clone())  # type: ignore[attr-defined]  # noqa: F821
+		return self.__class__(self._source.clone())  # type: ignore[attr-defined]
 	
 	
 	async def aclose(self) -> None:
@@ -304,7 +301,7 @@ class _WrapingIterReceiveChannelBase(ReceiveChannel[T_co], typing.Generic[T_co, 
 			raise trio.EndOfChannel()
 		
 		try:
-			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug # noqa: F821
+			async with self._shared.lock:  # type: ignore[attr-defined]  # upstream type bug
 				return await self._receive()
 		except trio.BrokenResourceError:
 			await self.aclose(_mark_closed=True)
@@ -336,12 +333,9 @@ class _WrapingIterReceiveChannelBase(ReceiveChannel[T_co], typing.Generic[T_co, 
 		if self._closed:
 			raise trio.ClosedResourceError()
 		
-		try:
-			return self.__class__(None, _shared=self._shared)
-		except BaseException:
-			raise
-		else:
-			self._shared.refcount += 1
+		channel = self.__class__(None, _shared=self._shared)
+		self._shared.refcount += 1
+		return channel
 	
 	
 	@abc.abstractmethod
@@ -372,7 +366,8 @@ class _WrapingAsyncIterReceiveChannel(
 		_WrapingIterReceiveChannelBase[T_co, typing.AsyncIterator[T_co]],
 		typing.Generic[T_co]
 ):
-	def __init__(self, source: typing.Optional[typing.AsyncIterable[T_co]], **kwargs):
+	def __init__(self, source: typing.Optional[typing.AsyncIterable[T_co]],
+	             **kwargs: typing.Any):
 		super().__init__(source.__aiter__() if source is not None else None, **kwargs)
 	
 	
@@ -403,7 +398,7 @@ class _WrapingSyncIterReceiveChannel(
 		typing.Generic[T_co]
 ):
 	def __init__(self, source: typing.Optional[typing.Iterable[T_co]],
-	             count_hint: typing.Optional[int] = None, **kwargs):
+	             count_hint: typing.Optional[int] = None, **kwargs: typing.Any):
 		super().__init__(iter(source) if source is not None else None, **kwargs)
 		
 		self.count = count_hint
@@ -539,16 +534,16 @@ class TeeingReceiveStream(ReceiveStream):
 			raise RuntimeError("Failed to initialize nursery synchronously")
 	
 	
-	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveStream], T], *args) -> T:
+	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveStream], T],
+	                     *args: typing.Any) -> T:
 		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
-		result = await self._nursery.start(func, receive_stream_from(receive_channel), *args)
+		result: T = await self._nursery.start(func, receive_stream_from(receive_channel), *args)
 		self._channels.append(send_channel)
 		return result
 	
 	
-	def start_task_soon(
-			self, func: typing.Callable[[trio.abc.ReceiveStream], typing.Any], *args
-	) -> None:
+	def start_task_soon(self, func: typing.Callable[[trio.abc.ReceiveStream], typing.Any],
+	                    *args: typing.Any) -> None:
 		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
 		self._nursery.start_soon(func, receive_stream_from(receive_channel), *args)
 		self._channels.append(send_channel)
@@ -561,7 +556,7 @@ class TeeingReceiveStream(ReceiveStream):
 			return b""
 		
 		try:
-			value = await self._source.receive_some(max_bytes)
+			value: bytes = await self._source.receive_some(max_bytes)
 			
 			# Pass received value (or EOF) to waiting write tasks
 			if len(value) > 0:
@@ -582,7 +577,7 @@ class TeeingReceiveStream(ReceiveStream):
 			raise
 	
 	
-	async def aclose(self, *, _mark_closed=True) -> None:
+	async def aclose(self, *, _mark_closed: bool = True) -> None:
 		if _mark_closed:
 			self._closed = True
 		if self._source is None:
@@ -632,7 +627,7 @@ class _WrapingTrioReceiveStream(ReceiveStream):
 	
 	
 	async def receive_some(self, max_bytes: typing.Optional[int] = None) -> bytes:
-		return await self._source.receive_some(max_bytes)
+		return typing.cast(bytes, await self._source.receive_some(max_bytes))
 	
 	
 	async def aclose(self) -> None:
@@ -687,7 +682,7 @@ class _WrapingIterReceiveStreamBase(ReceiveStream, typing.Generic[T_co]):
 			result = bytes(self._memview[self._offset:end_offset])
 			if end_offset >= len(self._memview):
 				self._offset = 0
-				self._memview.release()  # type: ignore  # Fixed in mypy 0.350
+				self._memview.release()
 				self._memview = None
 				self._buffer.clear()
 			return result
@@ -717,7 +712,7 @@ class _WrapingIterReceiveStreamBase(ReceiveStream, typing.Generic[T_co]):
 		pass
 	
 	
-	async def aclose(self, *, _mark_closed=True) -> None:
+	async def aclose(self, *, _mark_closed: bool = True) -> None:
 		if not self._closed and _mark_closed:
 			self._closed = True
 		
@@ -729,7 +724,7 @@ class _WrapingIterReceiveStreamBase(ReceiveStream, typing.Generic[T_co]):
 		finally:
 			self._source = None
 			if self._memview is not None:
-				self._memview.release()  # type: ignore  # Fixed in mypy 0.450
+				self._memview.release()
 				self._memview = None
 			self._buffer.clear()
 
@@ -783,7 +778,7 @@ class _WrapingSyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.Iterato
 	async def _close_source(self) -> None:
 		try:
 			# We catch errors instead
-			self._source.close()  # type: ignore[union-attr] # noqa: F821
+			self._source.close()  # type: ignore[union-attr]
 		except AttributeError:
 			pass
 

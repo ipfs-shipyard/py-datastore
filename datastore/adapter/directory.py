@@ -188,4 +188,4 @@ class ObjectDatastore(
 		"""Returns objects matching criteria expressed in `query`.
 		DirectoryTreeDatastore uses directory entries.
 		"""
-		return query(super().directory_read(query.key))
+		return query(super().directory_read(query.key))  # type: ignore[no-any-return]

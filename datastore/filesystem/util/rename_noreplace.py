@@ -3,6 +3,7 @@ all platforms – rather than just on Windows."""
 
 import os
 import sys
+import typing
 
 # The below idea is curtosy of the discussion in a .NetCore issue:
 # https://github.com/dotnet/runtime/issues/14885
@@ -11,10 +12,11 @@ if sys.platform == "win32":
 else:
 	import errno
 	
-	if sys.platform == "linux":
+	if sys.platform == "linux" or typing.TYPE_CHECKING:
 		from . import exchange
 	
-	def rename_noreplace(src, dst, *, src_dir_fd=None, dst_dir_fd=None):
+	def rename_noreplace(src: exchange.path_t, dst: exchange.path_t, *,
+	                     src_dir_fd: int = None, dst_dir_fd: int = None) -> None:
 		src = os.fsencode(src)
 		dst = os.fsencode(dst)
 		

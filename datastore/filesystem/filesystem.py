@@ -16,12 +16,22 @@ import datastore.util
 
 from .util import exchange, rename_noreplace, statx
 
+T = typing.TypeVar("T")
 if typing.TYPE_CHECKING:
+	os_PathLike_str = os.PathLike[str]
 	from typing_extensions import Literal as typing_Literal
-elif hasattr(typing, "Literal"):
-	from typing import Literal as typing_Literal
+	from typing_extensions import TypedDict as typing_TypedDict
 else:
-	from typing import Union as typing_Literal
+	os_PathLike_str = os.PathLike
+	if hasattr(typing, "Literal"):
+		from typing import Literal as typing_Literal
+	else:
+		from typing import Union as typing_Literal
+	if hasattr(typing, "TypedDict"):
+		from typing import TypedDict as typing_TypedDict
+	else:
+		def typing_TypedDict(*args, **kwargs) -> typing.Type[dict]:
+			return dict
 
 # Make default buffer larger to try to compensate for the thread switching overhead
 DEFAULT_BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE * 10
@@ -31,26 +41,28 @@ DEFAULT_STATS_KEY = datastore.Key("diskUsage.cache")
 ROOT_KEY = datastore.Key("/")
 
 
-async def run_blocking_intr(func, *args, **kwargs):
+async def run_blocking_intr(func: typing.Callable[..., T], *args: typing.Any,
+                            **kwargs: typing.Any) -> T:
 	"""Short form for :func:`trio.run_sync_in_worker_thread`"""
-	def callback():
+	def callback() -> T:
 		return func(*args, **kwargs)
-	return await trio.to_thread.run_sync(callback, cancellable=True)
+	return typing.cast(T, await trio.to_thread.run_sync(callback, cancellable=True))
 
 
-async def run_blocking_nointr(func, *args, **kwargs):
+async def run_blocking_nointr(func: typing.Callable[..., T], *args: typing.Any,
+                              **kwargs: typing.Any) -> T:
 	"""Short form for :func:`trio.run_sync_in_worker_thread`"""
-	def callback():
+	def callback() -> T:
 		return func(*args, **kwargs)
-	return await trio.to_thread.run_sync(callback, cancellable=False)
+	return typing.cast(T, await trio.to_thread.run_sync(callback, cancellable=False))
 
 
 def move_to_tempfile_sync(
-		src: typing.Union[os.PathLike, str], *,
+		src: typing.Union[os_PathLike_str, str], *,
 		wait_for_src: bool = False,
 		suffix: str = "",
 		prefix: str = "",
-		dir: typing.Optional[typing.Union[os.PathLike, str]] = None
+		dir: typing.Optional[typing.Union[os_PathLike_str, str]] = None
 ) -> typing.Optional[pathlib.Path]:
 	"""Moves file to temporary file location
 	
@@ -78,11 +90,21 @@ def move_to_tempfile_sync(
 
 
 @datastore.util.awaitable_to_context_manager
-async def make_named_tempfile(*args, **kwargs) -> 'trio._file_io.AsyncIOWrapper':
-	return trio.wrap_file(await run_blocking_nointr(tempfile.NamedTemporaryFile, *args, **kwargs))
+async def make_named_tempfile(*args: typing.Any, **kwargs: typing.Any) \
+      -> 'trio._file_io.AsyncIOWrapper':
+	return typing.cast(
+		'trio._file_io.AsyncIOWrapper',
+		trio.wrap_file(await run_blocking_nointr(tempfile.NamedTemporaryFile, *args, **kwargs))
+	)
 
 
 stat_result_t = typing.Union[os.stat_result, statx.stat_result]
+stat_kwargs_t = typing_TypedDict("stat_kwargs_t", {
+	"size":  int,
+	"atime": float,
+	"mtime": float,
+	"btime": typing.Optional[float],
+})
 
 
 class FileReader(datastore.abc.ReceiveStream):
@@ -91,13 +113,14 @@ class FileReader(datastore.abc.ReceiveStream):
 	_file: 'trio._file_io.AsyncIOWrapper'
 	
 	
-	def __init__(self, file: 'trio._file_io.AsyncIOWrapper', **kwargs):
+	def __init__(self, file: 'trio._file_io.AsyncIOWrapper', **kwargs: typing.Any):
 		self._file = file
 		
 		super().__init__(**kwargs)
 	
 	
-	async def receive_some(self, max_bytes: typing.Optional[int] = None):
+	async def receive_some(self, max_bytes: typing.Optional[int] = None) -> bytes:
+		buf: bytes
 		if max_bytes:
 			buf = await self._file.read(max_bytes)
 		else:
@@ -114,11 +137,12 @@ class FileReader(datastore.abc.ReceiveStream):
 	
 	
 	@staticmethod
-	def stat_result_to_kwargs(stat: stat_result_t):
-		result = {
+	def stat_result_to_kwargs(stat: stat_result_t) -> stat_kwargs_t:
+		result: stat_kwargs_t = {
 			"size":  stat.st_size,
 			"atime": stat.st_atime,
-			"mtime": stat.st_mtime
+			"mtime": stat.st_mtime,
+			"btime": None,
 		}
 		
 		if stat.st_atime_ns:
@@ -143,7 +167,7 @@ class FileReader(datastore.abc.ReceiveStream):
 	
 	
 	@classmethod
-	async def from_path(cls, filepath: typing.Union[str, bytes, os.PathLike]):
+	async def from_path(cls, filepath: typing.Union[str, bytes, os_PathLike_str]) -> 'FileReader':
 		# Open file
 		file = await trio.open_file(filepath, "rb")
 		try:
@@ -168,9 +192,31 @@ class DatastoreMetadata(datastore.util.DatastoreMetadata):
 	
 	size_accuracy: accuracy_t
 	
-	def __init__(self, *args, size_accuracy: accuracy_t = "unknown", **kwargs):
+	def __init__(self, *args: typing.Any, size_accuracy: accuracy_t = "unknown",
+	             **kwargs: typing.Any):
 		super().__init__(*args, **kwargs)
 		self.size_accuracy = size_accuracy
+
+
+# work around GH/mypy/mypy#731: no recursive structural types yet
+JSONPrimitive = typing.Union[str, int, bool, None]
+JSONType = typing.Union[JSONPrimitive, 'JSONList', 'JSONDict']
+
+
+class JSONList(typing.List[JSONType]):
+    pass
+
+
+class JSONDict(typing.Dict[str, JSONType]):
+    pass
+
+
+stats_json_t = typing_TypedDict("stats_json_t", {
+	"diskUsage": int,
+	"accuracy":  accuracy_t,
+	"canMerge":  bool,
+	"mtime":     int,  # This item is optional
+}, total=False)
 
 
 class Stats:
@@ -179,7 +225,7 @@ class Stats:
 	can_merge: bool = True
 	mtime_ns: int = -1
 	
-	def __repr__(self):
+	def __repr__(self) -> str:
 		return (f"{self.__class__.__qualname__}(disk_usage={self.disk_usage!r}, "
 		        f"accuracy={self.accuracy!r}, can_merge={self.can_merge!r}, "
 		        f"mtime_ns={self.mtime_ns!r})")
@@ -188,16 +234,16 @@ class Stats:
 		return copy.copy(self)
 	
 	@classmethod
-	def from_json(cls: 'typing.Type[Stats]', obj: dict) -> 'Stats':
+	def from_json(cls, obj: JSONDict) -> 'Stats':
 		self = cls()
-		self.disk_usage = int(obj.pop("diskUsage", self.disk_usage))
+		self.disk_usage = int(typing.cast(int, obj.pop("diskUsage", self.disk_usage)))
 		self.accuracy   = typing.cast(accuracy_t, str(obj.pop("accuracy", self.accuracy)))
-		self.can_merge  = bool(obj.pop("canMerge", False))
-		self.mtime_ns   = int(obj.pop("mtime", self.mtime_ns))
+		self.can_merge  = bool(typing.cast(bool, obj.pop("canMerge", False)))
+		self.mtime_ns   = int(typing.cast(int, obj.pop("mtime", self.mtime_ns)))
 		return self
 	
-	def to_json(self, mtime: bool = False) -> dict:
-		result = {
+	def to_json(self, mtime: bool = False) -> stats_json_t:
+		result: stats_json_t = {
 			"diskUsage": self.disk_usage,
 			"accuracy": self.accuracy,
 			"canMerge": self.can_merge,
@@ -211,7 +257,7 @@ class Stats:
 		self.accuracy = remote.accuracy
 
 
-def check_dir_empty_sync(path: typing.Union[os.PathLike, str]) -> bool:
+def check_dir_empty_sync(path: typing.Union[os_PathLike_str, str]) -> bool:
 	"""Synchroniously checks whether the given directory is empty."""
 	with os.scandir(path) as scanner:
 		for dent in scanner:
@@ -288,7 +334,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	
 	@classmethod
 	@datastore.util.awaitable_to_context_manager
-	async def create(cls, root: typing.Union[os.PathLike, str], *,
+	async def create(cls, root: typing.Union[os_PathLike_str, str], *,
 	                 case_sensitive: bool = True, remove_empty: bool = True,
 	                 stats: bool = False, stats_key: datastore.Key = DEFAULT_STATS_KEY
 	) -> 'FileSystemDatastore':
@@ -338,7 +384,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		return self
 	
 	
-	def __init__(self, *, _create_call=False):
+	def __init__(self, *, _create_call: bool = False):
 		assert _create_call, "Use FileSystemDatastore.create(…) for instance creation"
 	
 	
@@ -605,7 +651,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		if not self.stats:
 			return  # Nothing to do
 		
-		async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+		async with self._stats_lock:  # type: ignore[attr-defined]
 			await run_blocking_nointr(self._flush_stats_sync, write_restore_file, expect_file)
 	
 	
@@ -695,7 +741,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""
 		path = trio.Path(self.object_path(key))
 		try:
-			return await path.read_bytes()
+			return typing.cast(bytes, await path.read_bytes())
 		except FileNotFoundError as exc:
 			raise KeyError(key) from exc
 		except IsADirectoryError as exc:
@@ -705,8 +751,8 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	
 	def _put_replace_with_stats_sync(
 			self,
-			source: typing.Union[os.PathLike, str],
-			target: typing.Union[os.PathLike, str]
+			source: typing.Union[os_PathLike_str, str],
+			target: typing.Union[os_PathLike_str, str]
 	) -> None:
 		target        = pathlib.Path(target)
 		target_dir    = target.parent
@@ -743,9 +789,8 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				except FileExistsError:
 					continue
 	
-	async def _put(
-			self, key: datastore.Key, value: datastore.abc.ReceiveStream, *, replace=True
-	) -> None:
+	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveStream, *,
+	               replace: bool = True) -> None:
 		"""Stores or replaces the data named by `key` with `value`
 		
 		Arguments
@@ -763,12 +808,13 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			The given `key` names a subtree, not a value OR the contains a
 			value item as part of the key path
 		"""
-		async def receive_and_write(file, value):
+		async def receive_and_write(file: 'trio._file_io.AsyncIOWrapper',
+		                            value: datastore.abc.ReceiveStream) -> None:
 			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
 			while chunk:
 				# Do bookkeeping
 				if self.stats:
-					async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+					async with self._stats_lock:  # type: ignore[attr-defined]
 						self._stats.disk_usage += len(chunk)
 				
 				await file.write(chunk)
@@ -807,13 +853,13 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				await receive_and_write(temp_file, value)
 			
 			if self.stats:
-				async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+				async with self._stats_lock:  # type: ignore[attr-defined]
 					await run_blocking_nointr(self._put_replace_with_stats_sync, temp_file.name, path)
 			else:
 				await trio.Path(temp_file.name).replace(path)
 	
 	
-	def _delete_with_stats_sync(self, path: typing.Union[os.PathLike, str]) -> bool:
+	def _delete_with_stats_sync(self, path: typing.Union[os_PathLike_str, str]) -> bool:
 		path = pathlib.Path(path)
 		path_dir    = path.parent
 		path_prefix = path.name + ".tmp-"
@@ -826,7 +872,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		return True
 	
 
-	async def delete(self, key: datastore.Key):
+	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the data named by `key`
 		
 		Arguments
@@ -842,7 +888,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		path = trio.Path(self.object_path(key))
 		
 		if self.stats:
-			async with self._stats_lock:  # type: ignore[attr-defined]  # noqa: F821
+			async with self._stats_lock:  # type: ignore[attr-defined]
 				if not await run_blocking_nointr(self._delete_with_stats_sync, path):
 					raise KeyError(key)
 		else:

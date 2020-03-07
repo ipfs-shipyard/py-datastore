@@ -15,7 +15,7 @@ async def test_null(NullDatastore):
 			v = str(c).encode()
 		else:
 			v = [c]
-		k = Key(c)
+		k = Key(str(c))
 		assert not await s.contains(k)
 		with pytest.raises(KeyError):
 			await s.get(k)

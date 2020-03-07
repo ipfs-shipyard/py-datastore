@@ -18,14 +18,14 @@ U_co = typing.TypeVar("U_co", covariant=True)
 
 
 
-def is_valid_value_type(value: util.stream.ArbitraryReceiveChannel) -> bool:
+def is_valid_value_type(value: util.stream.ArbitraryReceiveChannel[typing.Any]) -> bool:
 	"""Checks that `value` is of the right type for `Datastore.put`
 	
 	It's just too easy to acidentally pass in the wrong type without this check.
 	Unfortunately this cannot check whether iterators return the correct types,
 	so the utility of this function unfortunately is limited to some extent.
 	"""
-	return isinstance(value, (
+	return isinstance(value, (  # type: ignore[misc]  # “Should be always true…”
 		trio.abc.ReceiveChannel,
 		collections.abc.AsyncIterable,
 		collections.abc.Awaitable,
@@ -252,7 +252,7 @@ class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""This won't ever match anything"""
-		return query([])
+		return query([])  # type: ignore[no-any-return]
 
 
 
@@ -263,7 +263,7 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	
 	_items: typing.Dict[str, typing.Dict[key_.Key, typing.List[T_co]]]
 	
-	def __init__(self):
+	def __init__(self) -> None:
 		self._items = dict()
 	
 	
@@ -379,9 +379,9 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		"""
 		# entire dataset already in memory, so ok to apply query naively
 		if str(query.key) in self._items:
-			return query(self._items[str(query.key)].values())
+			return query(self._items[str(query.key)].values())  # type: ignore[no-any-return]
 		else:
-			return query([])
+			return query([])  # type: ignore[no-any-return]
 	
 	
 	def __len__(self) -> int:

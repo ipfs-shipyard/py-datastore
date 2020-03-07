@@ -225,7 +225,7 @@ class NullDatastore(Datastore):
 
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""This won't ever match anything"""
-		return query([])
+		return query([])  # type: ignore[no-any-return]
 
 
 
@@ -236,7 +236,7 @@ class DictDatastore(Datastore):
 
 	_items: typing.Dict[str, typing.Dict[key_.Key, bytes]]
 
-	def __init__(self):
+	def __init__(self) -> None:
 		self._items = {}
 	
 	

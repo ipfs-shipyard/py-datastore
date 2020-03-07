@@ -13,6 +13,29 @@ import os
 import sys
 import typing
 
+__all__ = (
+	"Mask",
+	
+	"AT_FDCWD",
+	"AT_SYMLINK_NOFOLLOW",
+	"AT_REMOVEDIR",
+	"AT_NO_AUTOMOUNT",
+	"AT_EMPTY_PATH",
+	
+	"AT_STATX_SYNC_TYPE",
+	"AT_STATX_SYNC_AS_STAT",
+	"AT_STATX_FORCE_SYNC",
+	"AT_STATX_DONT_SYNC",
+	
+	"struct_statx",
+	"statx",
+	"stat_result",
+	"stat_result_t",
+	"stat",
+	"lstat",
+	"fstat",
+)
+
 
 class Mask(enum.IntFlag):
 	# Basic stats (stuff also part of `os.stat()`)
@@ -58,6 +81,9 @@ class struct_statx_timestamp(ctypes.Structure):
 		("tv_nsec",    ctypes.c_uint32),
 		("__reserved", ctypes.c_uint32),
 	]
+	
+	tv_sec: int
+	tv_nsec: int
 
 
 class struct_statx(ctypes.Structure):
@@ -91,6 +117,30 @@ class struct_statx(ctypes.Structure):
 		# Spare space
 		("__spare2", ctypes.c_uint64 * 14),
 	]
+	
+	stx_mask: Mask
+	stx_blksize: int
+	stx_attributes: int
+	stx_nlink: int
+	stx_uid: int
+	stx_gid: int
+	stx_mode: int
+	stx_ino: int
+	stx_size: int
+	stx_blocks: int
+	stx_attributes_mask: int
+	
+	# Timestamps
+	stx_atime: struct_statx_timestamp
+	stx_btime: struct_statx_timestamp
+	stx_ctime: struct_statx_timestamp
+	stx_mtime: struct_statx_timestamp
+	
+	# Device ID (if device file)
+	stx_rdev_major: int
+	stx_rdev_minor: int
+	stx_dev_major: int
+	stx_dev_minor: int
 
 
 assert ctypes.sizeof(struct_statx) == 0x100
@@ -153,7 +203,7 @@ if sys.platform == "linux":
 
 
 
-# We have define our own `stat_result` here as there is no way to add fields
+# We have to define our own `stat_result` here as there is no way to add fields
 # to `os.stat_result` unless Python thinks they should be there
 _stat_result = collections.namedtuple("stat_result", [
 	# Standard attributes
@@ -186,7 +236,7 @@ _stat_result = collections.namedtuple("stat_result", [
 
 
 class stat_result(_stat_result):
-	def __repr__(self):
+	def __repr__(self) -> str:
 		return (f"{self.__module__}.{type(self).__qualname__}("
 		        f"st_mode={self.st_mode!r}, "
 		        f"st_ino={self.st_ino!r}, "
@@ -200,14 +250,16 @@ class stat_result(_stat_result):
 		        f"st_ctime={self.st_ctime!r})")
 
 
-
-path_t = typing.Union[str, bytes, os.PathLike]
+stat_result_t = typing.Union[os.stat_result, stat_result]
+if typing.TYPE_CHECKING:
+	path_t = typing.Union[int, str, bytes, os.PathLike[str], os.PathLike[bytes]]
+else:
+	path_t = typing.Union[int, str, bytes, os.PathLike]
 
 _statx_available = "statx" in globals()
 
 
-def stat(path: path_t, *, dir_fd: int = None, follow_symlinks: bool = True) \
-    -> typing.Union[os.stat_result, stat_result]:
+def stat(path: path_t, *, dir_fd: int = None, follow_symlinks: bool = True) -> stat_result_t:
 	"""High-level wrapper around the ``statx(2)`` system call, that delegates
 	to :func:`os.stat` on other platforms, but provides `st_birthtime` on Linux."""
 	def ts_to_nstime(ts: struct_statx_timestamp) -> int:
@@ -276,11 +328,11 @@ def stat(path: path_t, *, dir_fd: int = None, follow_symlinks: bool = True) \
 	return os.stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
 
 
-def lstat(path, *, dir_fd=None):
+def lstat(path: path_t, *, dir_fd: typing.Optional[int] = None) -> stat_result_t:
 	"""Alias for ``stat(…, follow_symlinks=False)`."""
 	return stat(path, dir_fd=dir_fd, follow_symlinks=False)
 
 
-def fstat(fd):
+def fstat(fd: int) -> stat_result_t:
 	"""Alias for ``stat(fd)`."""
 	return stat(fd)

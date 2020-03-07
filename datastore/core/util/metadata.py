@@ -46,7 +46,8 @@ class ChannelMetadata(_MetadataBase):
 	# The total length of this stream (if available)
 	count: typing.Optional[int]
 	
-	def __init__(self, *args, count: typing.Optional[int] = None, **kwargs):
+	def __init__(self, *args: typing.Any, count: typing.Optional[int] = None,
+	             **kwargs: typing.Any):
 		super().__init__(*args, **kwargs)
 		self.count = count
 
@@ -62,7 +63,8 @@ class StreamMetadata(_MetadataBase):
 	# The total length of this stream (if available)
 	size: typing.Optional[int]
 	
-	def __init__(self, *args, size: typing.Optional[int] = None, **kwargs):
+	def __init__(self, *args: typing.Any, size: typing.Optional[int] = None,
+	             **kwargs: typing.Any):
 		super().__init__(*args, **kwargs)
 		self.size = size
 

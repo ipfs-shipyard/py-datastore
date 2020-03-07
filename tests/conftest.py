@@ -1,4 +1,5 @@
 import re
+import types
 import typing
 
 import pytest
@@ -6,8 +7,11 @@ import trio
 
 import datastore
 
-DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore)
+DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore[typing.Any])
+ET = typing.TypeVar("ET", bytes, typing.List[object])
 Query = typing.Any
+
+exceptions_t = typing.Union[typing.Type[BaseException], typing.Tuple[typing.Type[BaseException], ...]]
 
 
 class raises:
@@ -18,15 +22,19 @@ class raises:
 	This is the :mod:`trio.MultiError` compatible variant of :func:`pytest.raises`.
 	"""
 	
-	def __init__(self, expected_exception, *, match = None):
+	def __init__(self, expected_exception: exceptions_t, *, match: str = None):
 		self.expected_exception = expected_exception
 		self.message = "DID NOT RAISE {}".format(expected_exception) 
 		self.match_expr = match
 	
-	def __enter__(self):
+	def __enter__(self) -> None:
 		return None
 	
-	def __exit__(self, type, value, traceback):
+	def __exit__(
+			self, type: typing.Optional[typing.Type[BaseException]],
+			value: typing.Optional[BaseException],
+			traceback: typing.Optional[types.TracebackType],
+	) -> bool:
 		__tracebackhide__ = True
 		
 		if type is None:
@@ -34,7 +42,7 @@ class raises:
 		
 		# Check if all received exceptions are of the correct type
 		suppress_exception = True
-		def validate_exc_type(exc):
+		def validate_exc_type(exc: BaseException) -> None:
 			__tracebackhide__ = True
 			
 			nonlocal suppress_exception
@@ -45,7 +53,7 @@ class raises:
 		# Check if all received exceptions match the required pattern
 		if self.match_expr is not None and suppress_exception:
 			pat = re.compile(self.match_expr)
-			def validate_exc_str(exc):
+			def validate_exc_str(exc: BaseException) -> None:
 				__tracebackhide__ = True
 				
 				if not pat.search(str(exc)):
@@ -57,12 +65,7 @@ class raises:
 		return suppress_exception
 
 
-@pytest.fixture(name="DatastoreTests")
-def return_datastore_tests():
-	return DatastoreTests
-
-
-class DatastoreTests(typing.Generic[DS]):
+class DatastoreTests(typing.Generic[DS, ET]):
 	pkey: datastore.Key = datastore.Key('/dfadasfdsafdas/')
 	stores: typing.List[DS]
 	numelems: int
@@ -76,11 +79,11 @@ class DatastoreTests(typing.Generic[DS]):
 		self.is_binary = isinstance(stores[0], datastore.abc.BinaryDatastore)
 	
 	
-	def encode(self, value):
+	def encode(self, value: object) -> ET:
 		if self.is_binary:
-			return str(value).encode()
+			return str(value).encode()  # type: ignore[return-value]
 		else:
-			return [value]
+			return [value]  # type: ignore[return-value]
 	
 	
 	def check_length(self, length: int) -> None:
@@ -97,7 +100,7 @@ class DatastoreTests(typing.Generic[DS]):
 
 		# ensure removing non-existent keys is ok.
 		for value in range(0, self.numelems):
-			key = self.pkey.child(value)
+			key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert not await sn.contains(key)
 				with pytest.raises(KeyError):
@@ -114,7 +117,7 @@ class DatastoreTests(typing.Generic[DS]):
 		
 		# insert numelems elems
 		for value in range(0, self.numelems):
-			key = self.pkey.child(value)
+			key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert not await sn.contains(key)
 				with raises(KeyError):
@@ -124,20 +127,21 @@ class DatastoreTests(typing.Generic[DS]):
 				with raises(KeyError):
 					await sn.stat(key)
 				
-				await sn.put(key, self.encode(value))
+				await sn.put(key, self.encode(value))  # type: ignore[arg-type]
 				
 				assert await sn.contains(key)
 				assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
-				if self.is_binary:
-					assert (await sn.stat(key)).size == len(self.encode(value))
+				metadata = await sn.stat(key)
+				if isinstance(metadata, datastore.util.StreamMetadata):
+					assert metadata.size == len(self.encode(value))
 				else:
-					assert (await sn.stat(key)).count == 1
+					assert metadata.count == 1
 
 		# reassure they're all there.
 		self.check_length(self.numelems)
 
 		for value in range(0, self.numelems):
-			key = self.pkey.child(value)
+			key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert await sn.contains(key)
 				assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
@@ -182,7 +186,7 @@ class DatastoreTests(typing.Generic[DS]):
 		value: int
 		
 		for value in range(0, self.numelems):
-			key: datastore.Key = self.pkey.child(value)
+			key: datastore.Key = self.pkey.child(str(value))
 			for sn in self.stores:
 				await sn.put(key, value)
 
@@ -204,10 +208,10 @@ class DatastoreTests(typing.Generic[DS]):
 		
 		# change numelems elems
 		for value in range(0, self.numelems):
-			key: datastore.Key = self.pkey.child(value)
+			key: datastore.Key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert await sn.contains(key)
-				await sn.put(key, self.encode(value + 1))
+				await sn.put(key, self.encode(value + 1))  # type: ignore[arg-type]
 				assert await sn.contains(key)
 				assert self.encode(value) != await sn.get_all(key)
 				assert self.encode(value + 1) == await sn.get_all(key)
@@ -221,7 +225,7 @@ class DatastoreTests(typing.Generic[DS]):
 		
 		# remove numelems elems
 		for value in range(0, self.numelems):
-			key: datastore.Key = self.pkey.child(value)
+			key: datastore.Key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert await sn.contains(key)
 				await sn.delete(key)
@@ -236,3 +240,8 @@ class DatastoreTests(typing.Generic[DS]):
 		#await self.subtest_queries()  #FIXME: Query is broken
 		await self.subtest_update()
 		await self.subtest_remove()
+
+
+@pytest.fixture(name="DatastoreTests")
+def return_datastore_tests() -> typing.Type[DatastoreTests[DS, ET]]:
+	return DatastoreTests

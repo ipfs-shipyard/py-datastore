@@ -35,7 +35,7 @@ async def subtest_serializer_shim(serializer=None, numelems=100):
 	assert values_deserial == values_raw
 	
 	for value in values_raw:
-		key = datastore.Key(value["value"])
+		key = datastore.Key(str(value["value"]))
 		value_serialized = serializer.dumps([value])
 		
 		# should not be there yet
@@ -70,8 +70,6 @@ async def subtest_serializer_shim(serializer=None, numelems=100):
 
 @trio.testing.trio_test
 async def test_serializer_shim():
-	#XXX: Testing directly with the `json` module is not going to work as that
-	#     module expects input strings to be text, rather then binary
 	await subtest_serializer_shim(datastore.serializer.json.Serializer())
 	await subtest_serializer_shim(datastore.serializer.json.PrettySerializer())
 	await subtest_serializer_shim(datastore.serializer.pickle.Serializer())

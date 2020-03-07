@@ -94,8 +94,6 @@ class KeyTests(unittest.TestCase):
 		k1 = Key('/A/B/C:c')
 		k2 = Key('/A/B/C:c/D:d')
 
-		with pytest.raises(TypeError):
-		    k1.is_ancestor_of(str(k2))
 		assert k1.is_ancestor_of(k2)
 		assert k2.is_descendant_of(k1)
 		assert k1.type == 'C'
