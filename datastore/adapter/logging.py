@@ -23,9 +23,10 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	logger: logging.Logger
 	
 	
-	def __init__(self, *args, logger: logging.Logger = ROOT_LOGGER, **kwargs):
+	def __init__(self, *args: typing.Any, logger: logging.Logger = ROOT_LOGGER,
+	             **kwargs: typing.Any):
 		self.logger = logger
-		super().__init__(*args, **kwargs)  # type: ignore[call-arg] # noqa: F821
+		super().__init__(*args, **kwargs)  # type: ignore[call-arg]
 	
 	
 	async def get(self, key: datastore.Key) -> RT:
@@ -33,7 +34,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: get %s', self, key)
-		value = await super().get(key)  # type: ignore[misc] # noqa: F821
+		value: RT = await super().get(key)  # type: ignore[misc]
 		self.logger.debug('%s: %s', self, value)
 		return value
 	
@@ -43,7 +44,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: get %s', self, key)
-		value = await super().get_all(key)  # type: ignore[misc] # noqa: F821
+		value: RV = await super().get_all(key)  # type: ignore[misc]
 		self.logger.debug('%s: %s', self, value)
 		return value
 	
@@ -54,7 +55,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		"""
 		self.logger.info('%s: put %s', self, key)
 		self.logger.debug('%s: %s', self, value)
-		await super()._put(key, value)  # type: ignore[misc] # noqa: F821
+		await super()._put(key, value)  # type: ignore[misc]
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
@@ -62,7 +63,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: delete %s', self, key)
-		await super().delete(key)  # type: ignore[misc] # noqa: F821
+		await super().delete(key)  # type: ignore[misc]
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
@@ -70,7 +71,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: contains %s', self, key)
-		return await super().contains(key)  # type: ignore[misc] # noqa: F821
+		return await super().contains(key)  # type: ignore[misc, no-any-return]
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
@@ -78,7 +79,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: stat %s', self, key)
-		metadata = await super().stat(key)  # type: ignore[misc] # noqa: F821
+		metadata: MD = await super().stat(key)  # type: ignore[misc]
 		self.logger.debug('%s: %s', self, metadata)
 		return metadata
 	
@@ -88,7 +89,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		   LoggingDatastore logs the access.
 		"""
 		self.logger.info('%s: query %s', self, query)
-		return await super().query(query)  # type: ignore[misc] # noqa: F821
+		return await super().query(query)  # type: ignore[misc, no-any-return]
 
 
 class BinaryAdapter(

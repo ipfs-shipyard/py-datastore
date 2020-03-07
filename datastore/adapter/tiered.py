@@ -50,7 +50,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				value_: RT = await store.get(key)  # type: ignore[assignment] # noqa: F821
+				value_: RT = await store.get(key)  # type: ignore[assignment]
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
@@ -65,25 +65,23 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
 		if isinstance(self, datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		elif isinstance(self, datastore.abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			assert False
 		
 		for store2 in stores:
 			if store is store2:
 				break
 			result_stream.start_task_soon(run_put_task, store2, key)
 		
-		return result_stream  # type: ignore[return-value] # noqa: F723
+		return result_stream
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Return the object named by key. Checks each datastore in order."""
-		return await (await self.get(key)).collect()  # type: ignore[return-value] # noqa: F723
+		return await (await self.get(key)).collect()  # type: ignore[return-value]
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
@@ -93,13 +91,11 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
 		if isinstance(self, datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		elif isinstance(self, datastore.abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			assert False
 		
 		for store in self._stores:
 			if store is self._stores[-1]:
@@ -112,18 +108,20 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		"""Removes the object from all underlying datastores."""
 		error_count = 0
 
-		async def count_key_errors(coroutine):
+		async def count_key_errors(  # type: ignore[return]  # mypy bug
+				store: DS, key: datastore.Key
+		) -> None:
 			nonlocal error_count
 			try:
-				await coroutine
+				await store.delete(key)
 			except KeyError:
 				error_count += 1
 		
 		async with trio.open_nursery() as nursery:
 			for store in self._stores:
-				nursery.start_soon(count_key_errors, store.delete(key))
+				nursery.start_soon(count_key_errors, store, key)
 		
-		# Raise exception if non of the subordinated datastores contained this
+		# Raise exception if none of the subordinated datastores contained this
 		# key (and hence it wasn't actually available in the first place)
 		if error_count >= len(self._stores):
 			raise KeyError(key)
@@ -135,7 +133,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		the only) complete record of all objects.
 		"""
 		# queries hit the last (most complete) datastore
-		return await self._stores[-1].query(query)  # type: ignore[attr-defined] # noqa: F821
+		return await self._stores[-1].query(query)  # type: ignore[attr-defined, no-any-return]
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
@@ -158,7 +156,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				metadata_: MD = await store.stat(key)  # type: ignore[assignment] # noqa: F821
+				metadata_: MD = await store.stat(key)  # type: ignore[assignment]
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:

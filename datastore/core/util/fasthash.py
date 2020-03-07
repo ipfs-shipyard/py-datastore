@@ -1,6 +1,6 @@
 import hashlib
 
 
-def fast_hash(to_hash):
+def fast_hash(to_hash: object) -> int:
 	"""fast, deterministic hash function"""
 	return int(hashlib.sha1(str(to_hash).encode('utf-8')).hexdigest(), 16)

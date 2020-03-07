@@ -54,47 +54,48 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	key_transform_fn: _support.FunctionProperty[KEY_TRANSFORM_T]
 	
 	
-	def __init__(self, *args, key_transform: KEY_TRANSFORM_T = (lambda k: k), **kwargs):
+	def __init__(self, *args: typing.Any, key_transform: KEY_TRANSFORM_T = (lambda k: k),
+	             **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with `keytransform` function."""
 		self.key_transform_fn = key_transform
-		super().__init__(*args, **kwargs)  # type: ignore[call-arg] # noqa: F821
+		super().__init__(*args, **kwargs)  # type: ignore[call-arg]
 	
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Returns the object named by keytransform(key)."""
-		return await super().get(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().get(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Returns the object named by keytransform(key)."""
-		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		"""Stores the object names by keytransform(key)."""
-		await super()._put(self.key_transform_fn(key), value)  # type: ignore[misc] # noqa: F821
+		await super()._put(self.key_transform_fn(key), value)  # type: ignore[misc, no-any-return]
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object named by keytransform(key)."""
-		await super().delete(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		await super().delete(self.key_transform_fn(key))  # type: ignore[misc]
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
 		"""Returns whether the object named by key is in this datastore."""
-		return await super().contains(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().contains(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
 		"""Returns the metadata of the object named by keytransform(key)."""
-		return await super().stat(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().stat(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		query = query.copy()
 		query.key = self.key_transform_fn(query.key)
-		return await super().query(query)  # type: ignore[misc] # noqa: F821
+		return await super().query(query)  # type: ignore[misc, no-any-return]
 
 
 class BinaryAdapter(
@@ -147,7 +148,7 @@ class _LowercaseKeyAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, 
 	"""
 	__slots__ = ()
 	
-	def __init__(self, *args, **kwargs):
+	def __init__(self, *args: typing.Any, **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with `key_transform` function."""
 		super().__init__(*args, key_transform=self.lowercase_key, **kwargs)
 	
@@ -209,7 +210,8 @@ class _NamespaceAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV]
 	
 	namespace: datastore.Key
 
-	def __init__(self, namespace: typing.Union[str, datastore.Key], *args, **kwargs):
+	def __init__(self, namespace: typing.Union[str, datastore.Key],
+	             *args: typing.Any, **kwargs: typing.Any):
 		"""Initializes NamespaceDatastore with `key` namespace."""
 		self.namespace = datastore.Key(namespace)
 		super().__init__(*args, key_transform = self.namespace_key, **kwargs)
@@ -280,11 +282,11 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 		return key.name
 	
 	
-	def __init__(self, *args,
+	def __init__(self, *args: typing.Any,
 	             depth: int = None,
 	             length: int = None,
 	             key_fn: typing.Callable[[datastore.Key], str] = None,
-	             **kwargs):
+	             **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with keytransform function.
 
 		Arguments

@@ -13,6 +13,18 @@ import os
 import sys
 import typing
 
+__all__ = (
+	"AT_FDCWD",
+	"RenameFlags",
+	"renameat2",
+	
+	"FsOpt",
+	"exchangedata",
+	
+	"exchange",
+	"supports_dir_fd",
+)
+
 # Special FD for value for meaning “no FD”
 AT_FDCWD = -100
 
@@ -140,11 +152,15 @@ if sys.platform == "darwin":
 			raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))
 
 
-path_t = typing.Union[str, bytes, os.PathLike]
+if typing.TYPE_CHECKING:
+	path_t = typing.Union[str, bytes, os.PathLike[str], os.PathLike[bytes]]
+else:
+	path_t = typing.Union[str, bytes, os.PathLike]
 
 
 if "renameat2" in globals() or "exchangedata" in globals():
-	def exchange(src: path_t, dst: path_t, *, src_dir_fd: int = None, dst_dir_fd: int = None):
+	def exchange(src: path_t, dst: path_t, *,
+	             src_dir_fd: int = None, dst_dir_fd: int = None) -> None:
 		src = os.fsencode(src)
 		dst = os.fsencode(dst)
 		
@@ -164,9 +180,9 @@ if "renameat2" in globals() or "exchangedata" in globals():
 			# be exchanged on macOS, while any file node type may be exchanged
 			# on Linux. Without this, the behaviour on symlinks would differ
 			# between the two platforms instead!
-			options = FsOpt.NOFOLLOW  # type: ignore[name-defined]  # noqa: F821
+			options = FsOpt.NOFOLLOW  # type: ignore[name-defined]
 			
-			exchangedata(src, dst, options)  # type: ignore[name-defined]  # noqa: F821
+			exchangedata(src, dst, options)  # type: ignore[name-defined]
 		else:
 			assert False, "unreachable"
 

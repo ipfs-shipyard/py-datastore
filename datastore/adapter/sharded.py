@@ -45,17 +45,17 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).get(key)  # type: ignore[return-value] # noqa: F723
+		return await self.get_sharded_datastore(key).get(key)  # type: ignore[return-value]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Return the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value] # noqa: F723, E501
+		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value]
 	
 	
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		"""Stores the object to the corresponding datastore."""
-		await self.get_sharded_datastore(key).put(key, value)  # type: ignore[arg-type] # noqa: F821
+		await self.get_sharded_datastore(key).put(key, value)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
@@ -70,7 +70,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	
 	async def stat(self, key: datastore.Key) -> MD:
 		"""Return the metadata of the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value] # noqa: F723
+		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value]
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
@@ -80,7 +80,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		return cursor
 	
 	
-	def _shard_query_generator(self, query):
+	def _shard_query_generator(self, query):  # type: ignore  #FIXME: broken
 		"""A generator that queries each shard in sequence."""
 		shard_query = query.copy()
 		

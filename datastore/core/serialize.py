@@ -133,7 +133,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		for field in result:
 			cursor._iterable.extend(self.serializer.loads(field))
 
-		return cursor
+		return cursor  # type: ignore[no-any-return]
 	
 	
 	async def delete(self, key: key_.Key) -> None:
