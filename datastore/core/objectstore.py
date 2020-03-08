@@ -26,7 +26,7 @@ def is_valid_value_type(value: util.stream.ArbitraryReceiveChannel[typing.Any]) 
 	Unfortunately this cannot check whether iterators return the correct types,
 	so the utility of this function unfortunately is limited to some extent.
 	"""
-	return isinstance(value, (  # type: ignore[misc]  # “Should be always true…”
+	return isinstance(value, (  # type: ignore[unreachable]  # “Should be always true…”
 		trio.abc.ReceiveChannel,
 		collections.abc.AsyncIterable,
 		collections.abc.Awaitable,
