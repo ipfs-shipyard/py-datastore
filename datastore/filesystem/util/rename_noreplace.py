@@ -34,6 +34,8 @@ else:
 				# Ignore errors likely resulting from lack of filesystem support
 				if exc.errno != errno.EINVAL:
 					raise
+			else:
+				return
 		
 		
 		# Alias source file to destination
