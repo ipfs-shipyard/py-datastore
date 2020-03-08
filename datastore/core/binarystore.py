@@ -204,6 +204,38 @@ class Datastore(trio.abc.AsyncResource):
 			)
 	
 	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of this datastore
+		
+		Unless overwritten this will not return any interesting value. In general,
+		datastore backing implementations should try to at least expose a proper
+		size measure if that is possible without any major accounting overhead.
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			For datastore backends this will generally be ignored.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			For datastore backends this must be silently ignored.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred
+		"""
+		# The following should NOT be `util.metadata.DatastoreMetadata.IGNORE` as
+		# that value would indicate that this datastore should be ignored during
+		# size estimation rather than not implementing size estimation
+		return util.metadata.DatastoreMetadata()
+	
+	
 	async def aclose(self) -> None:
 		"""Closes this any resources held by this datastore, possibly blocking
 		
@@ -339,6 +371,19 @@ class DictDatastore(Datastore):
 			Key naming a byte sequence
 		"""
 		return util.metadata.StreamMetadata(size=len(self._collection(key)[key]))
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns the number of bytes stored in this datastore
+		
+		Arguments
+		---------
+		selector
+			Ignored by backing datastores
+		"""
+		size = sum(map(lambda c: sum(map(len, c.values())), self._items.values()))
+		return util.metadata.DatastoreMetadata(size=size, size_accuracy="exact")
 	
 	
 	def __len__(self) -> int:
@@ -489,6 +534,39 @@ class Adapter(Datastore):
 			return await self.child_datastore.stat(key)
 		else:
 			return await Datastore.stat(self, key)
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of the child datastore
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			This is required to ensure that no backing datastore is counted more
+			than once if `selector` is ``None``.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in the child datastore
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		if id(self.child_datastore) in _seen:
+			return util.metadata.DatastoreMetadata.IGNORE
+		
+		_seen.add(id(self.child_datastore))
+		return self.child_datastore.datastore_stats(selector, _seen=_seen)
 	
 	
 	async def aclose(self) -> None:

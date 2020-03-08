@@ -83,6 +83,12 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		self.logger.debug('%s: %s', self, metadata)
 		return metadata
 	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore"""
+		self.logger.info('%s: datastore_stats %s', self, selector)
+		return super().datastore_stats(selector, _seen=_seen)  # type: ignore[misc, no-any-return]
+	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`.

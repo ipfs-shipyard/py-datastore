@@ -180,6 +180,39 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 			mtime = metadata.mtime,
 			btime = metadata.btime
 		)
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of the child datastore
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			This is required to ensure that no backing datastore is counted more
+			than once if `selector` is ``None``.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in the child datastore
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		if id(self.child_datastore) in _seen:
+			return util.metadata.DatastoreMetadata.IGNORE
+		_seen.add(id(self.child_datastore))
+		
+		return self.child_datastore.datastore_stats(selector, _seen=_seen)
 
 
 """

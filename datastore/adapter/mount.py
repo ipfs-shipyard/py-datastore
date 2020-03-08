@@ -49,6 +49,18 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return ds, datastore.Key(key.list[(offset + 1):])
 	
 	
+	def _store_iter(self, *, mount_tree: mount_tree_t[DS] = None) -> typing.Iterator[DS]:
+		if mount_tree is None:
+			mount_tree = self.mounts
+		
+		for subtree, ds in mount_tree.values():
+			if ds is not None:
+				yield ds
+			
+			if subtree is not None:
+				yield from self._store_iter(mount_tree=subtree)
+	
+	
 	async def get(self, key: datastore.Key) -> RT:
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
@@ -66,7 +78,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	async def _put(self, key: datastore.Key, value: RT) -> None:
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
-			raise RuntimeError(f"Cannot put key {key}: No datastore mounted at this path")
+			raise RuntimeError(f"Cannot put key {key}: No datastore mounted at that path")
 		await ds.put(subkey, value)
 	
 	
@@ -91,11 +103,57 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return await ds.stat(subkey)  # type: ignore[return-value]
 	
 	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore refered to by `selector` or all children
+		
+		Arguments
+		---------
+		selector
+			Key that is used to look up which child datastore should be queried
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in (one of) the child datastore(s)
+		RuntimeError
+			Argument `selector` was not ``None`` and there was no datastore mounted
+			that matched its value
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		if selector is not None:
+			ds, subkey = self._find_mountpoint(selector)
+			if ds is None:
+				raise RuntimeError(f"Cannot retrieve stats of datastore mounted at {selector}: "
+				                   f"No datastore mounted at that path")
+			
+			if id(ds) in _seen:
+				return datastore.util.DatastoreMetadata.IGNORE
+			
+			_seen.add(id(ds))
+			return ds.datastore_stats(subkey, _seen=_seen)
+		else:
+			metadata = datastore.util.DatastoreMetadata.IGNORE
+			for ds in self._store_iter():
+				if id(ds) in _seen:
+					continue
+				
+				_seen.add(id(ds))
+				metadata += ds.datastore_stats(_seen=_seen)
+			return metadata
+	
+	
 	def mount(self, prefix: datastore.Key, ds: DS) -> None:
 		"""Mounts the datastore `ds` at key `prefix`
 		
-		If a datastore is already mounted at the given key a :exc:`KeyError` is
-		raised.
+		Raises
+		------
+		KeyError
+			Another datastore was already mounted at the given key
 		"""
 		current:  mount_tree_t[DS] = self.mounts
 		previous: mount_tree_t[DS]
@@ -117,11 +175,13 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	def unmount(self, prefix: datastore.Key) -> DS:
 		"""Unmounts and returns the datastore at key `prefix`
 		
-		If no datastore is mounted at the given key a :exc:`KeyError` is
-		raised.
-		
 		The returned datastore is not closed; it is the callers responsibility
 		to ensure this by using ``await m.unmount(key).aclose()`` or similar.
+		
+		Raises
+		------
+		KeyError
+			No datastore was mounted at the given key
 		"""
 		current: mount_tree_t[DS] = self.mounts
 		
