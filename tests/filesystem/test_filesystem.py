@@ -65,6 +65,7 @@ async def concurrent_datastore(temp_path, queue):
 				queue.task_done()
 
 
+@pytest.mark.repeat(10)
 @trio.testing.trio_test
 async def test_stats_concurrent(temp_path):
 	async with trio.open_nursery() as nursery:
