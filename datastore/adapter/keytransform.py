@@ -91,6 +91,15 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return await super().stat(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore"""
+		return super().datastore_stats(  # type: ignore[misc, no-any-return]
+			self.key_transform_fn(selector) if selector is not None else None,
+			_seen=_seen
+		)
+	
+	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		query = query.copy()

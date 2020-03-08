@@ -10,7 +10,7 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
-	"""Represents a collection of datastore shards.
+	"""Represents a collection of datastore shards
 	
 	A datastore is selected based on a sharding function.
 	Sharding functions should take a Key and return an integer.
@@ -21,6 +21,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	Also ensure the order is correct upon initialization. While this is not as
 	important for caches, it is crucial for persistent datastores.
 	"""
+	
 	__slots__ = ()
 	
 	_shardingfn: _support.FunctionProperty[typing.Callable[[datastore.Key], int]]
@@ -69,8 +70,30 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
-		"""Return the metadata of the object named by key from the corresponding datastore."""
+		"""Returns the metadata of the object named by key from the corresponding datastore"""
 		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value]
+	
+	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore corresponding to `selector` or all children
+		
+		Arguments
+		---------
+		selector
+			Key that is used to look up which child datastore should be queried
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in (one of) the child datastore(s)
+		"""
+		if selector is not None:
+			return self.get_sharded_datastore(selector).datastore_stats(selector, _seen=_seen)
+		return super().datastore_stats(_seen=_seen)
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:

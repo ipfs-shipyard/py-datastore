@@ -71,7 +71,7 @@ async def test_stats_concurrent(temp_path):
 		queue = queue_.Queue()
 		async with FileSystemDatastore.create(temp_path, stats=True) as fs:
 			assert fs.datastore_stats().size == 0
-			assert fs.datastore_stats().size_accuracy == "initial-exact"
+			assert fs.datastore_stats().size_accuracy == "exact"
 			
 			await fs.put(datastore.Key("/a"), b"1234")
 			
@@ -122,7 +122,7 @@ async def test_stats_concurrent(temp_path):
 async def test_stats_tracking(temp_path):
 	async with FileSystemDatastore.create(temp_path, stats=True) as fs:
 		assert fs.datastore_stats().size == 0
-		assert fs.datastore_stats().size_accuracy == "initial-exact"
+		assert fs.datastore_stats().size_accuracy == "exact"
 		
 		# Write to datastore key
 		await fs.put(datastore.Key("/a"), b"1234")
@@ -144,7 +144,7 @@ async def test_stats_tracking(temp_path):
 async def test_stats_restore(temp_path):
 	async with FileSystemDatastore.create(temp_path, stats=True) as fs:
 		assert fs.datastore_stats().size == 0
-		assert fs.datastore_stats().size_accuracy == "initial-exact"
+		assert fs.datastore_stats().size_accuracy == "exact"
 		
 		await fs.put(datastore.Key("/a"), b"1234")
 		
@@ -153,7 +153,7 @@ async def test_stats_restore(temp_path):
 	# Re-open datastore and check that the stats are still there
 	async with FileSystemDatastore.create(temp_path, stats=True) as fs:
 		assert fs.datastore_stats().size == 4
-		assert fs.datastore_stats().size_accuracy == "initial-exact"
+		assert fs.datastore_stats().size_accuracy == "exact"
 	
 	# Replace content with stuff written by a non-cooperating datastore user
 	await (trio.Path(temp_path) / "diskUsage.data").write_text(
@@ -164,4 +164,4 @@ async def test_stats_restore(temp_path):
 	# properly merged
 	async with FileSystemDatastore.create(temp_path, stats=True) as fs:
 		assert fs.datastore_stats().size == 7
-		assert fs.datastore_stats().size_accuracy == "initial-exact"
+		assert fs.datastore_stats().size_accuracy == "exact"

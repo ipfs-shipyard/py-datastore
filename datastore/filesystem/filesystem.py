@@ -1,5 +1,4 @@
 import copy
-import dataclasses
 import errno
 import io
 import json
@@ -38,8 +37,6 @@ else:
 DEFAULT_BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE * 10
 
 DEFAULT_STATS_KEY = datastore.Key("diskUsage.cache")
-
-ROOT_KEY = datastore.Key("/")
 
 
 async def run_blocking_intr(func: typing.Callable[..., T], *args: typing.Any,
@@ -184,14 +181,12 @@ class FileReader(datastore.abc.ReceiveStream):
 accuracy_t = typing_Literal["unknown", "initial-exact", "initial-approximate", "initial-timed-out"]
 
 
-@dataclasses.dataclass(frozen=True)
-class DatastoreMetadata(datastore.util.DatastoreMetadata):
-	__doc__ = (datastore.util.DatastoreMetadata.__doc__ or "")[:-1] + """\
-	size_accuracy
-		The accuracy of the returned size value
-	"""
-	
-	size_accuracy: accuracy_t = "unknown"
+ACCURACY_INTERAL_TO_METADATA: typing.Dict[accuracy_t, datastore.typing.accuracy_t] = {
+	"unknown": "unknown",
+	"initial-exact": "exact",
+	"initial-approximate": "approximate",
+	"initial-timed-out": "lower-bound",
+}
 
 
 # work around GH/mypy/mypy#731: no recursive structural types yet
@@ -945,20 +940,21 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			raise KeyError(key) from exc
 	
 	
-	def datastore_stats(self, key: datastore.Key = ROOT_KEY) -> DatastoreMetadata:
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
 		"""Returns available metadata of this filesystem
 		
 		Unless stats are enabled this will not return any useful values.
 		
 		Arguments
 		---------
-		key
-			This parameter is ignored for leaf/backing datastores
+		selector
+			Ignored by backing datastores
 		"""
 		if self.stats:
-			return DatastoreMetadata(
+			return datastore.util.DatastoreMetadata(
 				size = self._stats.disk_usage,
-				size_accuracy = self._stats.accuracy,
+				size_accuracy = ACCURACY_INTERAL_TO_METADATA[self._stats.accuracy],
 			)
 		else:
-			return DatastoreMetadata()
+			return datastore.util.DatastoreMetadata()

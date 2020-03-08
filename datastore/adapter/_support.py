@@ -63,6 +63,33 @@ class DatastoreCollectionMixin(typing.Generic[DS]):
 		"""Inserts datastore `store` into this collection at `index`."""
 		self._stores.insert(index, store)
 	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns the metadata sum of all children
+		
+		Arguments
+		---------
+		selector
+			Passed down to queried child datastores but otherwise ignored, as this
+			datastore always queries all children
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in one of the child datastores
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		metadata = datastore.util.DatastoreMetadata.IGNORE
+		for store in self._stores:
+			if id(store) in _seen:
+				continue
+			
+			_seen.add(id(store))
+			metadata += store.datastore_stats(selector, _seen=_seen)
+		return metadata
+	
+	
 	async def _stores_cleanup(self) -> None:
 		"""Closes and removes all added datastores"""
 		errors: typing.List[Exception] = []

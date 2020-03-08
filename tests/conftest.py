@@ -86,17 +86,22 @@ class DatastoreTests(typing.Generic[DS, ET]):
 			return [value]  # type: ignore[return-value]
 	
 	
-	def check_length(self, length: int) -> None:
+	def check_length(self, length: int, size: int = None) -> None:
 		for sn in self.stores:
+			# Check number of elements on datastores that supports this (optional)
 			try:
 				assert len(sn) == length  # type: ignore
 			except TypeError:
 				pass
+			
+			# Check size of datastore in bytes if it supports this
+			if size is not None:
+				assert sn.datastore_stats().size in (size, None)
 	
 	
 	async def subtest_remove_nonexistent(self) -> None:
 		assert len(self.stores) > 0
-		self.check_length(0)
+		self.check_length(0, 0)
 
 		# ensure removing non-existent keys is ok.
 		for value in range(0, self.numelems):
@@ -107,7 +112,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 					await sn.delete(key)
 				assert not await sn.contains(key)
 
-		self.check_length(0)
+		self.check_length(0, 0)
 	
 	
 	async def subtest_insert_elems(self) -> None:
@@ -231,7 +236,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 				await sn.delete(key)
 				assert not await sn.contains(key)
 
-		self.check_length(0)
+		self.check_length(0, 0)
 	
 	
 	async def subtest_simple(self) -> None:
