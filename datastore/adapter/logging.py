@@ -49,13 +49,14 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return value
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, *,
+	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
 		"""Stores the object `value` named by `key`self.
 		   LoggingDatastore logs the access.
 		"""
-		self.logger.info('%s: put %s', self, key)
+		self.logger.info('%s: put %s (create=%s, replace=%s)', self, key, create, replace)
 		self.logger.debug('%s: %s', self, value)
-		await super()._put(key, value)  # type: ignore[misc]
+		await super()._put(key, value, create=create, replace=replace, **kwargs)  # type: ignore[misc]
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

@@ -71,9 +71,11 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc, no-any-return]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		"""Stores the object names by keytransform(key)."""
-		await super()._put(self.key_transform_fn(key), value)  # type: ignore[misc, no-any-return]
+		await super()._put(  # type: ignore[misc, no-any-return]
+			self.key_transform_fn(key), value, **kwargs
+		)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

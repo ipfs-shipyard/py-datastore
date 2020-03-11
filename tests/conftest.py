@@ -132,6 +132,8 @@ class DatastoreTests(typing.Generic[DS, ET]):
 				with raises(KeyError):
 					await sn.stat(key)
 				
+				with raises(KeyError):
+					await sn.put(key, self.encode(value), create=False)  # type: ignore[arg-type]
 				await sn.put(key, self.encode(value))  # type: ignore[arg-type]
 				
 				assert await sn.contains(key)
@@ -215,6 +217,8 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		for value in range(0, self.numelems):
 			key: datastore.Key = self.pkey.child(str(value))
 			for sn in self.stores:
+				with raises(KeyError):
+					await sn.put(key, self.encode(value + 1), replace=False)  # type: ignore[arg-type]
 				assert await sn.contains(key)
 				await sn.put(key, self.encode(value + 1))  # type: ignore[arg-type]
 				assert await sn.contains(key)
