@@ -21,12 +21,17 @@ if typing.TYPE_CHECKING:
 	os_PathLike_str = os.PathLike[str]
 	from typing_extensions import Literal as typing_Literal
 	from typing_extensions import TypedDict as typing_TypedDict
+	typing_Literal_True = typing_Literal[True]
+	typing_Literal_False = typing_Literal[False]
 else:
 	os_PathLike_str = os.PathLike
 	if hasattr(typing, "Literal"):
 		from typing import Literal as typing_Literal
+		typing_Literal_True = typing.Literal[True]
+		typing_Literal_False = typing.Literal[False]
 	else:
 		from typing import Union as typing_Literal
+		typing_Literal_True = typing_Literal_False = bool
 	if hasattr(typing, "TypedDict"):
 		from typing import TypedDict as typing_TypedDict
 	else:
@@ -61,7 +66,7 @@ def move_to_tempfile_sync(
 		suffix: str = "",
 		prefix: str = "",
 		dir: typing.Optional[typing.Union[os_PathLike_str, str]] = None
-) -> typing.Optional[pathlib.Path]:
+) -> pathlib.Path:
 	"""Moves file to temporary file location
 	
 	Similar to the :func:`tempfile.mkstemp` function, but moves an existing
@@ -69,12 +74,14 @@ def move_to_tempfile_sync(
 	for _ in range(tempfile.TMP_MAX):
 		tmp = pathlib.Path(tempfile.mktemp(suffix=suffix, prefix=prefix, dir=dir))
 		
+		last_exc: BaseException
 		try:
 			rename_noreplace.rename_noreplace(src, tmp)
 			return tmp  # Success
 		except FileExistsError:
 			pass  # Target file was created in the meantime
-		except FileNotFoundError:
+		except FileNotFoundError as exc:
+			last_exc = exc
 			if wait_for_src:
 				# Somebody else moved the file out already, give
 				# them extra time to move in the replacement
@@ -82,9 +89,19 @@ def move_to_tempfile_sync(
 				# If they died, those stats will be gone however…
 				os.sched_yield()
 			else:
-				return None
+				raise
 	
-	return None
+	raise last_exc from last_exc
+
+
+async def move_to_tempfile(
+		src: typing.Union[os_PathLike_str, str], *,
+		wait_for_src: bool = False,
+		suffix: str = "",
+		prefix: str = "",
+		dir: typing.Optional[typing.Union[os_PathLike_str, str]] = None
+) -> pathlib.Path:
+	return await run_blocking_nointr(move_to_tempfile_sync, src, wait_for_src, suffix, prefix, dir)
 
 
 @datastore.util.awaitable_to_context_manager
@@ -257,6 +274,28 @@ def check_dir_empty_sync(path: typing.Union[os_PathLike_str, str]) -> bool:
 	return True
 
 
+class DummyLock:
+	__slots__ = ()
+	
+	async def acquire(self) -> None:
+		pass
+	
+	def acquire_nowait(self) -> typing_Literal_True:
+		return True
+	
+	def release(self) -> None:
+		pass
+	
+	async def __aenter__(self) -> 'DummyLock':
+		return self
+	
+	async def __aexit__(self, *args: typing.Any) -> bool:
+		return False
+	
+	def locked(self) -> typing_Literal_False:
+		return False
+
+
 class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	"""Simple flat-file datastore.
 
@@ -310,14 +349,13 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 
 	"""
 	
-	_stats: Stats
-	_stats_lock: trio.Lock
-	_stats_prev: Stats
+	_stats: typing.Optional[Stats] = None
+	_stats_lock: typing.Union[trio.Lock, DummyLock] = DummyLock()
+	_stats_prev: typing.Optional[Stats] = None
 	_stats_orig: typing.Optional[Stats] = None
 	
 	case_sensitive: bool
 	object_extension: str = ".data"
-	stats: bool
 	stats_key: datastore.Key
 	remove_empty: bool
 	root_path: pathlib.PurePath
@@ -330,7 +368,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	                 stats: bool = False, stats_key: datastore.Key = DEFAULT_STATS_KEY
 	) -> 'FileSystemDatastore':
 		"""Initialize the datastore with given root directory `root`.
-
+		
 		Arguments
 		---------
 		root
@@ -365,12 +403,12 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		self.root_path = pathlib.PurePath(root)
 		self.case_sensitive = bool(case_sensitive)
 		self.remove_empty = bool(remove_empty)
-		self.stats = bool(stats)
 		self.stats_key = datastore.Key(stats_key)
-		self._stats_lock = trio.Lock()
 		
-		# Read stats data if applicable
-		await self._read_stats()
+		# Enable stats processing
+		if stats:
+			self._stats_lock = trio.Lock()
+			await self._init_stats()
 		
 		return self
 	
@@ -379,10 +417,12 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		assert _create_call, "Use FileSystemDatastore.create(…) for instance creation"
 	
 	
-	async def _read_stats(self) -> None:
-		if not self.stats:
-			return  # Nothing to do
-		
+	@property
+	def stats(self) -> bool:
+		return bool(self._stats)
+	
+	
+	async def _init_stats(self) -> None:
 		# Start fresh
 		self._stats = Stats()
 		
@@ -444,6 +484,8 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		   as the “remote”)
 		5. Success
 		"""
+		assert self._stats is not None
+		assert self._stats_prev is not None
 		assert self._stats_lock.locked()
 		
 		unlink_paths: typing.List[pathlib.Path] = []
@@ -451,15 +493,18 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			path = pathlib.Path(self.object_path(self.stats_key))
 			path_restore = pathlib.Path(str(path) + "-restore")
 			path_dir     = path.parent
-			path_prefix  = path.name + ".tmp-"
+			path_prefix  = f".{path.name}.tmp-"
 			
 			while True:
 				# Read restore file if it exists (works around non-cooperating
 				# implementations just overwriting everything blindly)
-				path_restore_tmp = move_to_tempfile_sync(
-					path_restore, dir=path_dir, prefix=path_prefix
-				)
-				if path_restore_tmp is not None:
+				try:
+					path_restore_tmp = move_to_tempfile_sync(
+						path_restore, dir=path_dir, prefix=path_prefix
+					)
+				except FileNotFoundError:
+					pass  # No restore file currently written
+				else:
 					unlink_paths.append(path_restore_tmp)
 					
 					restore_data  = json.loads(path_restore_tmp.read_bytes())
@@ -525,15 +570,18 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 						# between these two actions, we loose the stats.
 						
 						# Move target file to temporary location
-						old_path = move_to_tempfile_sync(
-							path, wait_for_src=expect_file, dir=path_dir, prefix=path_prefix
-						)
+						try:
+							old_path = move_to_tempfile_sync(
+								path, wait_for_src=expect_file, dir=path_dir, prefix=path_prefix
+							)
+						except FileNotFoundError:
+							old_path = None
 					
 					# This code applies both to the case of atomic exchange not being
-					# available and the target file being non-existant
+					# available and the target file being non-existent
 					try:
 						# Move created temporary file with our data to
-						# producation file location
+						# production file location
 						rename_noreplace.rename_noreplace(new_path, path)
 						self._stats.mtime_ns = new_path_mtime_ns
 					except FileExistsError:
@@ -602,7 +650,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 					
 					try:
 						# Move created temporary file with our data to
-						# producation file location
+						# production file location
 						rename_noreplace.rename_noreplace(new_restore_path, path_restore)
 					except FileExistsError:
 						# Somebody else beat us to it, we'll need to incorporate
@@ -639,10 +687,10 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		See :meth:`_flush_stats_sync` for all nitty gritty details on how
 		conflict resolution is performed.
 		"""
-		if not self.stats:
+		if self._stats is None:
 			return  # Nothing to do
 		
-		async with self._stats_lock:  # type: ignore[attr-defined]
+		async with self._stats_lock:  # type: ignore[union-attr]
 			await run_blocking_nointr(self._flush_stats_sync, write_restore_file, expect_file)
 	
 	
@@ -740,14 +788,21 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
 	
 	
-	def _put_replace_with_stats_sync(
+	def _put_replace_sync(
 			self,
 			source: typing.Union[os_PathLike_str, str],
 			target: typing.Union[os_PathLike_str, str]
 	) -> None:
-		target        = pathlib.Path(target)
+		source = pathlib.Path(source)
+		target = pathlib.Path(target)
+		if self._stats is None:
+			source.replace(target)
+			return
+		
+		assert self._stats_lock.locked()
+		
 		target_dir    = target.parent
-		target_prefix = target.name + ".tmp-"
+		target_prefix = f".{target.name}.tmp-"
 		try:
 			# Atomically exchange temporary and production file
 			# (only works on Linux and macOS, but not *BSD and Windows, unfortunately)
@@ -755,30 +810,44 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			
 			# Do bookkeeping of the source file (now the former target file) that
 			# we're going to remove
-			if self.stats:
-				self._stats.disk_usage -= os.stat(source).st_size
+			self._stats.disk_usage -= os.stat(source).st_size
 			os.unlink(source)
 		except (FileNotFoundError, AttributeError, NotImplementedError):
 			# Fallback code in case atomic exchange is not available or the target
 			# file was removed in the meantime
 			
 			while True:
-				# Move target file to temporary location
-				temp_path = move_to_tempfile_sync(target, dir=target_dir, prefix=target_prefix)
-				if temp_path is not None:
-					# Do bookkeeping of this file we're going to remove
-					if self.stats:
-						self._stats.disk_usage -= temp_path.stat().st_size
+				try:
+					# Move target file to temporary location
+					temp_path = move_to_tempfile_sync(target, dir=target_dir, prefix=target_prefix)
+				except FileNotFoundError:
+					pass
+				else:
+					# Do bookkeeping of this file before removing it
+					self._stats.disk_usage -= temp_path.stat().st_size
 					temp_path.unlink()
 				
 				try:
 					# Move created temporary file with our data to
-					# producation file location
+					# production file location
 					rename_noreplace.rename_noreplace(source, target)
 					
 					break
 				except FileExistsError:
 					continue
+	
+	async def _receive_and_write(self, file: 'trio._file_io.AsyncIOWrapper',
+	                             value: datastore.abc.ReceiveStream) -> None:
+		chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
+		while chunk:
+			# Do bookkeeping
+			if self._stats is not None:
+				async with self._stats_lock:  # type: ignore[union-attr]
+					self._stats.disk_usage += len(chunk)
+			
+			await file.write(chunk)
+			
+			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
 	
 	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveStream, *,
 	               replace: bool = True) -> None:
@@ -799,19 +868,6 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			The given `key` names a subtree, not a value OR the contains a
 			value item as part of the key path
 		"""
-		async def receive_and_write(file: 'trio._file_io.AsyncIOWrapper',
-		                            value: datastore.abc.ReceiveStream) -> None:
-			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
-			while chunk:
-				# Do bookkeeping
-				if self.stats:
-					async with self._stats_lock:  # type: ignore[attr-defined]
-						self._stats.disk_usage += len(chunk)
-				
-				await file.write(chunk)
-				
-				chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
-		
 		path = trio.Path(self.object_path(key))
 		path_dir    = path.parent
 		path_prefix = path.name + ".tmp-"
@@ -827,7 +883,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		
 		try:
 			async with await path.open("xb") as file:
-				await receive_and_write(file, value)
+				await self._receive_and_write(file, value)
 		except IsADirectoryError as exc:
 			# Should only happen if `object_extension` is `""`
 			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
@@ -841,26 +897,30 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			async with make_named_tempfile(
 				mode="wb", dir=path_dir, prefix=path_prefix, delete=False
 			) as temp_file:
-				await receive_and_write(temp_file, value)
+				await self._receive_and_write(temp_file, value)
 			
-			if self.stats:
-				async with self._stats_lock:  # type: ignore[attr-defined]
-					await run_blocking_nointr(self._put_replace_with_stats_sync, temp_file.name, path)
-			else:
-				await trio.Path(temp_file.name).replace(path)
+			async with self._stats_lock:  # type: ignore[union-attr]
+				await run_blocking_nointr(self._put_replace_sync, temp_file.name, path)
 	
 	
-	def _delete_with_stats_sync(self, path: typing.Union[os_PathLike_str, str]) -> bool:
+	def _delete_sync(self, path: typing.Union[os_PathLike_str, str]) -> None:
 		path = pathlib.Path(path)
-		path_dir    = path.parent
-		path_prefix = path.name + ".tmp-"
+		if self._stats is None:
+			path.unlink()
+			return
 		
-		temp_path = move_to_tempfile_sync(path, dir=path_dir, prefix=path_prefix)
-		if temp_path is None:
-			return False
-		self._stats.disk_usage -= temp_path.stat().st_size
-		temp_path.unlink()
-		return True
+		assert self._stats_lock.locked()
+		
+		path_dir    = path.parent
+		path_prefix = f".{path.name}.tmp-"
+		
+		try:
+			temp_path = move_to_tempfile_sync(path, dir=path_dir, prefix=path_prefix)
+		except FileNotFoundError:
+			raise  # Let this propagate to signal that the file didn't exist
+		else:
+			self._stats.disk_usage -= temp_path.stat().st_size
+			temp_path.unlink()
 	
 
 	async def delete(self, key: datastore.Key) -> None:
@@ -878,15 +938,11 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""
 		path = trio.Path(self.object_path(key))
 		
-		if self.stats:
-			async with self._stats_lock:  # type: ignore[attr-defined]
-				if not await run_blocking_nointr(self._delete_with_stats_sync, path):
-					raise KeyError(key)
-		else:
-			try:
-				await path.unlink()
-			except FileNotFoundError as exc:
-				raise KeyError(key) from exc
+		try:
+			async with self._stats_lock:  # type: ignore[union-attr]
+				await run_blocking_nointr(self._delete_sync, path)
+		except FileNotFoundError as exc:
+			raise KeyError(key) from exc
 		
 		# Try to remove parent directories if they are empty
 		if self.remove_empty:
@@ -898,7 +954,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				#    the path of that directory starts with `{self.root_path}/`.
 				#  * … not the same directory again – to ensure that pathlib's
 				#    special `Path(".").parent == Path(".")` behaviour doesn't
-				#    bite us. (This check may be unecessary / overly pendantic…)
+				#    bite us. (This check may be unnecessary / overly pedantic…)
 				# The loop is stopped when we either reach the root directory
 				# or receive an `ENOTEMPTY` error indicating that we tried to
 				# remove a directory that wasn't actually empty.
@@ -951,10 +1007,10 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		selector
 			Ignored by backing datastores
 		"""
-		if self.stats:
-			return datastore.util.DatastoreMetadata(
-				size = self._stats.disk_usage,
-				size_accuracy = ACCURACY_INTERAL_TO_METADATA[self._stats.accuracy],
-			)
-		else:
+		if self._stats is None:
 			return datastore.util.DatastoreMetadata()
+		
+		return datastore.util.DatastoreMetadata(
+			size = self._stats.disk_usage,
+			size_accuracy = ACCURACY_INTERAL_TO_METADATA[self._stats.accuracy],
+		)
