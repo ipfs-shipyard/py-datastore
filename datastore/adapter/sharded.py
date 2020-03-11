@@ -54,9 +54,9 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		"""Stores the object to the corresponding datastore."""
-		await self.get_sharded_datastore(key).put(key, value)
+		await self.get_sharded_datastore(key).put(key, value, **kwargs)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

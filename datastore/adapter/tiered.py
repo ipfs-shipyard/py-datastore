@@ -15,8 +15,9 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 @typing.no_type_check
-async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: datastore.Key):
-	await store.put(key, receive_stream)
+async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: datastore.Key,
+                       kwargs: typing.Dict[str, typing.Any] = {}) -> None:
+	await store.put(key, receive_stream, **kwargs)
 
 
 class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
@@ -84,7 +85,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		return await (await self.get(key)).collect()  # type: ignore[return-value]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		"""Stores the object in all underlying datastores."""
 		result_stream: typing.Union[
 			datastore.core.util.stream.TeeingReceiveStream,
@@ -100,8 +101,8 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		for store in self._stores:
 			if store is self._stores[-1]:
 				break  # Last store drives this `TeeingReceiveStream`
-			result_stream.start_task_soon(run_put_task, store, key)
-		await self._stores[-1].put(key, result_stream)
+			result_stream.start_task_soon(run_put_task, store, key, kwargs)
+		await self._stores[-1].put(key, result_stream, **kwargs)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

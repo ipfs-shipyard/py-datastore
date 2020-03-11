@@ -98,31 +98,48 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 		pass
 
 
-	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co]) -> None:
-		"""Stores or replaces the object named by `key` with `value`
+	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveChannel[T_co], *,
+	              create: bool = True, replace: bool = True) -> None:
+		"""Stores or replaces the object named by *key* with *value*
+		
+		This operation is similar to opening a regular file on a filesystem for
+		writing or doing an ``INSERT INTO OR UPDATE`` style SQL operation with a
+		primary key (or parts thereof depending on the provided flags).
 		
 		Arguments
 		---------
 		key
 			Key naming the object to store
 		value
-			A synchronous or asynchronous bytes or iteratable of bytes object
-			yielding the data to store
+			A synchronous or asynchronous iterable of objects to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		
 		Raises
 		------
 		RuntimeError
 			An internal error occurred
+		RuntimeError
+			Arguments *create* and *replace* cannot both be ``False``
+		NotImplementedError
+			This datastore does not support the argument *create* or *replace* being ``False``,
+			but it is not ``True``
 		"""
 		assert is_valid_value_type(value)
-		await self._put(key, util.stream.receive_channel_from(value))
+		if not create and not replace:
+			raise RuntimeError("Arguments create and replace cannot both be False")
+		await self._put(key, util.stream.receive_channel_from(value), create=create, replace=replace)
 	
-
+	
 	@abc.abstractmethod
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
-		"""Like :meth:`put`, but always receives a `datastore.util.ReceiveCahnnel`
-		   compatible object, so that your datastore implementation doesn't
-		   have to do any conversion
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
+	               create: bool, replace: bool) -> None:
+		"""Like :meth:`put`, but always receives a :type:`datastore.abc.ReceiveChannel` compatible object
+		
+		This way your datastore implementation doesn't have to do the
+		conversion from the several supported input types supported itself.
 		"""
 		pass
 	
@@ -284,7 +301,8 @@ class NullDatastore(Datastore[T_co], typing.Generic[T_co]):
 		"""Unconditionally raise `KeyError`"""
 		raise KeyError(key)
 
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
+	               create: bool, replace: bool) -> None:
 		"""Do nothing with `key` and ignore the `value`"""
 		pass
 
@@ -350,7 +368,8 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 	
 
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
+	               create: bool, replace: bool) -> None:
 		"""Stores the object `value` named by `key`.
 		
 		Stores the object in the collection corresponding to ``key.path``.
@@ -361,8 +380,20 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 			Key naming `value`
 		value
 			The object to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		"""
-		self._collection(key)[key] = await value.collect()
+		# This isn't thread-safe, but that's OK as we don't actually
+		# guarantee that, rather we are only safe with regards to trio's
+		# task scheduling
+		collection = self._collection(key)
+		if not create and key not in collection:
+			raise KeyError(key)
+		if not replace and key in collection:
+			raise KeyError(key)
+		collection[key] = await value.collect()
 	
 	
 	async def delete(self, key: key_.Key) -> None:
@@ -487,7 +518,8 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		return typing.cast(util.stream.ReceiveChannel[T_co], await self.child_datastore.get(key))
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
+	               create: bool, replace: bool) -> None:
 		"""Stores the object `value` named by `key`.
 		
 		Default shim implementation simply calls ``child_datastore.put(key, value)``.
@@ -495,12 +527,17 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		Arguments
 		---------
 		key
-			Key naming `value`.
+			Key naming `value`
 		value
-			The object to store.
+			The object to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		"""
 		# See :meth:`~get` for why we cast here
-		await self.child_datastore.put(key, typing.cast(util.stream.ReceiveChannel[U_co], value))
+		await self.child_datastore.put(key, typing.cast(util.stream.ReceiveChannel[U_co], value),
+		                               create=create, replace=replace)
 	
 	
 	async def delete(self, key: key_.Key) -> None:

@@ -75,11 +75,11 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return await ds.get_all(subkey)  # type: ignore[return-value]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		ds, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise RuntimeError(f"Cannot put key {key}: No datastore mounted at that path")
-		await ds.put(subkey, value)
+		await ds.put(subkey, value, **kwargs)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

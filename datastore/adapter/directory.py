@@ -37,14 +37,15 @@ class ObjectDirectorySupport:
 	
 	@typing.no_type_check
 	async def directory(self, dir_key: datastore.Key, exist_ok: bool = False) -> bool:
-		"""Initializes directory at dir_key.
+		"""Initializes directory at dir_key
 		
 		Returns a boolean of whether a new directory was actually created or
-		not."""
+		not.
+		"""
 		try:
 			await (await super().get(dir_key)).aclose()
 		except KeyError:
-			await super()._put(dir_key, datastore.util.receive_channel_from([]))
+			await super().put(dir_key, [])
 			return True
 		else:
 			if not exist_ok:
@@ -84,7 +85,7 @@ class ObjectDirectorySupport:
 		
 		if key_str not in dir_items:
 			dir_items.append(key_str)
-			await super()._put(dir_key, datastore.util.receive_channel_from(dir_items))
+			await super().put(dir_key, dir_items)
 	
 	
 	@typing.no_type_check
@@ -110,7 +111,7 @@ class ObjectDirectorySupport:
 			if not missing_ok:
 				raise KeyError(f"{key} in {dir_key}") from None
 		else:
-			await super()._put(dir_key, datastore.util.receive_channel_from(dir_items))
+			await super().put(dir_key, dir_items)
 
 
 
@@ -159,11 +160,12 @@ class ObjectDatastore(
 	FORWARD_STAT     = True
 	
 	
-	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co]) -> None:
+	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co],
+	               **kwargs: typing.Any) -> None:
 		"""Stores the object `value` named by `key`.
 		   DirectoryTreeDatastore stores a directory entry.
 		"""
-		await super()._put(key, value)
+		await super()._put(key, value, **kwargs)
 		
 		# ignore root
 		if key.is_top_level():
