@@ -15,7 +15,7 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 @typing.no_type_check
-async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: datastore.Key,
+async def run_put_task(receive_stream: datastore.abc.ReceiveStream, store: DS, key: datastore.Key,
                        kwargs: typing.Dict[str, typing.Any] = {}) -> None:
 	await store.put(key, receive_stream, **kwargs)
 
@@ -98,11 +98,21 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		else:
 			assert False
 		
-		for store in self._stores:
-			if store is self._stores[-1]:
-				break  # Last store drives this `TeeingReceiveStream`
-			result_stream.start_task_soon(run_put_task, store, key, kwargs)
-		await self._stores[-1].put(key, result_stream, **kwargs)
+		try:
+			for store in self._stores:
+				if store is self._stores[-1]:
+					break  # Last store drives this `TeeingReceiveStream`
+				result_stream.start_task_soon(run_put_task, store, key, kwargs)
+			await self._stores[-1]._put(key, result_stream, **kwargs)  # type: ignore[arg-type]
+		except BaseException:
+			# Ensure the other tasks are immediately canceled if the final
+			# store's put raises an exception
+			#
+			# Without this the nursery and its attached tasks will stay open
+			# and cause an undecipherable “the init task should be the last
+			# task to exit” error one loop exit.
+			await result_stream.aclose()
+			raise
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

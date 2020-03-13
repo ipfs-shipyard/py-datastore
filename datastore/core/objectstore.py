@@ -366,7 +366,6 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		"""
 		return self._collection(key)[key]
 	
-
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
 	               create: bool, replace: bool) -> None:

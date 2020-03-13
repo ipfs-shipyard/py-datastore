@@ -33,10 +33,9 @@ class raises:
 	def __exit__(
 			self, type: typing.Optional[typing.Type[BaseException]],
 			value: typing.Optional[BaseException],
-			traceback: typing.Optional[types.TracebackType],
+			tb: typing.Optional[types.TracebackType],
 	) -> bool:
 		__tracebackhide__ = True
-		
 		if type is None:
 			pytest.fail(self.message)
 		
