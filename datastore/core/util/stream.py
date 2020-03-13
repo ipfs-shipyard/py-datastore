@@ -1,6 +1,7 @@
 import abc
 import collections.abc
 import io
+import sys
 import typing
 
 import trio.abc
@@ -10,6 +11,15 @@ from . import metadata
 T    = typing.TypeVar("T")
 T_co = typing.TypeVar("T_co", covariant=True)
 U_co = typing.TypeVar("U_co", covariant=True)
+
+if typing.TYPE_CHECKING:
+	T_contra = typing.TypeVar("T_contra", contravariant=True)
+	import typing_extensions
+	
+	class _TeeingStartTaskCallback(typing_extensions.Protocol[T_contra, T_co]):
+		def __call__(self, stream: T_contra, *args: typing.Any,
+		             task_status: 'trio._core._run._TaskStatus') -> T_co:
+			...
 
 
 ArbitraryReceiveChannel = typing.Union[
@@ -110,7 +120,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			raise RuntimeError("Failed to initialize nursery synchronously")
 	
 	
-	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveChannel[T_co]], T],
+	async def start_task(self, func: '_TeeingStartTaskCallback[trio.abc.ReceiveChannel[T_co], T]',
 	                     *args: typing.Any) -> T:
 		async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug
 			send_channel, receive_channel = trio.open_memory_channel(self._shared.bufsize)
@@ -192,6 +202,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		if self._shared.source is None:
 			return
 		
+		
 		self._shared.refcount -= 1
 		if self._shared.refcount != 0:
 			return
@@ -201,13 +212,12 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 				# Close all remaining teeing streams by sending them a
 				# cancellation error
 				for channel in self._shared.channels:
-					with trio.CancelScope() as cancel_scope:
-						cancel_scope.shield = True
+					with trio.CancelScope(shield=True):
 						await trio.aclose_forcefully(channel)
 				
 				# Close the source stream
 				await self._shared.source.aclose()
-			except BaseException as exc:
+			except BaseException:
 				# Wait for any tasks possibly still active in the nursery
 				#
 				# This must be called in this special `try` way to ensure that
@@ -215,10 +225,14 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 				# cannot be cleaned up anymore. Additionally, this will replace
 				# a `trio.Cancelled` resulting of some other temporarily stored
 				# exception by the actual exception value originally raised.
-				if not await self._shared.nursery_manager.__aexit__(type(exc), exc, exc.__traceback__):
+				if not await self._shared.nursery_manager.__aexit__(*sys.exc_info()):
 					raise
 			else:
-				await self._shared.nursery_manager.__aexit__(None, None, None)
+				etype = sys.exc_info()[0]
+				if etype is None or issubclass(etype, trio.EndOfChannel):
+					await self._shared.nursery_manager.__aexit__(None, None, None)
+				elif not await self._shared.nursery_manager.__aexit__(*sys.exc_info()):
+					raise
 		finally:
 			self._shared.channels.clear()
 			self._shared.source = None
@@ -522,7 +536,6 @@ class TeeingReceiveStream(ReceiveStream):
 		self._closed  = False
 		
 		
-		
 		# Create nursery without using a `async with`-statement
 		# (Only works because the `__aenter__`-call does not actually block on anything.)
 		self._channels = []
@@ -535,7 +548,7 @@ class TeeingReceiveStream(ReceiveStream):
 			raise RuntimeError("Failed to initialize nursery synchronously")
 	
 	
-	async def start_task(self, func: typing.Callable[[trio.abc.ReceiveStream], T],
+	async def start_task(self, func: '_TeeingStartTaskCallback[trio.abc.ReceiveStream, T]',
 	                     *args: typing.Any) -> T:
 		send_channel, receive_channel = trio.open_memory_channel(self._bufsize)
 		result: T = await self._nursery.start(func, receive_stream_from(receive_channel), *args)
@@ -567,7 +580,7 @@ class TeeingReceiveStream(ReceiveStream):
 				for channel in self._channels:
 					await channel.aclose()
 				self._channels.clear()
-
+				
 				# Ensure that our slaves have finished before the final value
 				# is returned
 				await self.aclose(_mark_closed=False)
@@ -589,13 +602,12 @@ class TeeingReceiveStream(ReceiveStream):
 				# Close all remaining teeing streams by sending them a
 				# cancellation error
 				for channel in self._channels:
-					with trio.CancelScope() as cancel_scope:
-						cancel_scope.shield = True
+					with trio.CancelScope(shield=True):
 						await trio.aclose_forcefully(channel)
 				
 				# Close the source stream
 				await self._source.aclose()
-			except BaseException as exc:
+			except BaseException:
 				# Wait for any tasks possibly still active in the nursery
 				#
 				# This must be called in this special `try` way to ensure that
@@ -603,10 +615,12 @@ class TeeingReceiveStream(ReceiveStream):
 				# cannot be cleaned up anymore. Additionally, this will replace
 				# a `trio.Cancelled` resulting of some other temporarily stored
 				# exception by the actual exception value originally raised.
-				if not await self._nursery_manager.__aexit__(type(exc), exc, exc.__traceback__):
+				if not await self._nursery_manager.__aexit__(*sys.exc_info()):
 					raise
 			else:
-				await self._nursery_manager.__aexit__(None, None, None)
+				if not await self._nursery_manager.__aexit__(*sys.exc_info()):
+					if sys.exc_info()[0] is not None:
+						raise
 		finally:
 			self._channels.clear()
 			self._source = None
@@ -780,7 +794,6 @@ class _WrapingSyncIterReceiveStream(_WrapingIterReceiveStreamBase[typing.Iterato
 			self._source.close()  # type: ignore[union-attr]
 		except AttributeError:
 			pass
-
 
 
 def receive_stream_from(stream: ArbitraryReceiveStream) -> ReceiveStream:
