@@ -68,12 +68,20 @@ class DatastoreTests(typing.Generic[DS, ET]):
 	pkey: datastore.Key = datastore.Key('/dfadasfdsafdas/')
 	stores: typing.List[DS]
 	numelems: int
+	length: int
 	is_binary: bool
+	test_put_new: bool
+	put_new_keys: typing.Dict[int, typing.List[datastore.Key]]
 	
 	#FIXME: For some reason `numelems` increases test runtime with at least n²
-	def __init__(self, stores: typing.List[DS], numelems: int = 10):  # 1000):
+	def __init__(self, stores: typing.List[DS], test_put_new: bool = True,
+	             numelems: int = 10):  # 1000):
 		self.stores = stores
 		self.numelems = numelems
+		self.length = 0
+		self.test_put_new = test_put_new
+		if test_put_new:
+			self.put_new_keys = {idx: [] for idx in range(len(stores))}
 		
 		self.is_binary = isinstance(stores[0], datastore.abc.BinaryDatastore)
 	
@@ -85,11 +93,11 @@ class DatastoreTests(typing.Generic[DS, ET]):
 			return [value]  # type: ignore[return-value]
 	
 	
-	def check_length(self, length: int, size: int = None) -> None:
+	def check_length(self, size: int = None) -> None:
 		for sn in self.stores:
 			# Check number of elements on datastores that supports this (optional)
 			try:
-				assert len(sn) == length  # type: ignore
+				assert len(sn) == self.length  # type: ignore
 			except TypeError:
 				pass
 			
@@ -100,7 +108,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 	
 	async def subtest_remove_nonexistent(self) -> None:
 		assert len(self.stores) > 0
-		self.check_length(0, 0)
+		self.check_length(0)
 
 		# ensure removing non-existent keys is ok.
 		for value in range(0, self.numelems):
@@ -111,7 +119,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 					await sn.delete(key)
 				assert not await sn.contains(key)
 
-		self.check_length(0, 0)
+		self.check_length(0)
 	
 	
 	async def subtest_insert_elems(self) -> None:
@@ -120,6 +128,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		value: int
 		
 		# insert numelems elems
+		self.length += self.numelems
 		for value in range(0, self.numelems):
 			key = self.pkey.child(str(value))
 			for sn in self.stores:
@@ -142,17 +151,43 @@ class DatastoreTests(typing.Generic[DS, ET]):
 					assert metadata.size == len(self.encode(value))
 				else:
 					assert metadata.count == 1
-
+		
 		# reassure they're all there.
-		self.check_length(self.numelems)
-
+		self.check_length()
+		
+		if self.test_put_new:
+			self.length += self.numelems
+			# insert numelems unnamed keys
+			for value in range(0, self.numelems):
+				for sn_idx, sn in enumerate(self.stores):
+					key = await sn.put_new(self.pkey, self.encode(value))  # type: ignore[arg-type]
+					print(sn_idx, self.pkey, key)
+					assert await sn.contains(key)
+					assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
+					metadata = await sn.stat(key)
+					if isinstance(metadata, datastore.util.StreamMetadata):
+						assert metadata.size == len(self.encode(value))
+					else:
+						assert metadata.count == 1
+					
+					self.put_new_keys[sn_idx].append(key)
+		
+		# reassure they're all there.
+		self.check_length()
+		
 		for value in range(0, self.numelems):
 			key = self.pkey.child(str(value))
 			for sn in self.stores:
 				assert await sn.contains(key)
 				assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
-
-		self.check_length(self.numelems)
+		
+		if self.test_put_new:
+			for sn_idx, sn in enumerate(self.stores):
+				for value, key in enumerate(self.put_new_keys[sn_idx]):
+					assert await sn.contains(key)
+					assert await sn.get_all(key) == await (await sn.get(key)).collect() == self.encode(value)
+		
+		self.check_length()
 	
 	
 	@typing.no_type_check  #FIXME: This method is broken
@@ -212,6 +247,9 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		sn: DS
 		value: int
 		
+		length: int = self.length
+		self.check_length()
+		
 		# change numelems elems
 		for value in range(0, self.numelems):
 			key: datastore.Key = self.pkey.child(str(value))
@@ -223,8 +261,20 @@ class DatastoreTests(typing.Generic[DS, ET]):
 				assert await sn.contains(key)
 				assert self.encode(value) != await sn.get_all(key)
 				assert self.encode(value + 1) == await sn.get_all(key)
-
-		self.check_length(self.numelems)
+		
+		if self.test_put_new:
+			for sn_idx, sn in enumerate(self.stores):
+				for value, key in enumerate(self.put_new_keys[sn_idx]):
+					with raises(KeyError):
+						await sn.put(key, self.encode(value + 1), replace=False)  # type: ignore[arg-type]
+					assert await sn.contains(key)
+					await sn.put(key, self.encode(value + 1))  # type: ignore[arg-type]
+					assert await sn.contains(key)
+					assert self.encode(value) != await sn.get_all(key)
+					assert self.encode(value + 1) == await sn.get_all(key)
+		
+		self.check_length()
+		assert self.length == length
 	
 	
 	async def subtest_remove(self) -> None:
@@ -238,8 +288,19 @@ class DatastoreTests(typing.Generic[DS, ET]):
 				assert await sn.contains(key)
 				await sn.delete(key)
 				assert not await sn.contains(key)
-
-		self.check_length(0, 0)
+		self.length -= self.numelems
+		
+		self.check_length()
+		
+		if self.test_put_new:
+			for sn_idx, sn in enumerate(self.stores):
+				for value, key in enumerate(self.put_new_keys[sn_idx]):
+					assert await sn.contains(key)
+					await sn.delete(key)
+					assert not await sn.contains(key)
+			self.length -= self.numelems
+		
+		self.check_length(0)
 	
 	
 	async def subtest_simple(self) -> None:

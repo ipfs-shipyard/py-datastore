@@ -18,7 +18,7 @@ async def test_keytransform_simple(DatastoreTests, Adapter, DictDatastore, encod
 		s3 = stack.push_async_exit(Adapter(DictDatastore()))
 		stores = [s1, s2, s3]
 
-		await DatastoreTests(stores).subtest_simple()
+		await DatastoreTests(stores, test_put_new=False).subtest_simple()
 
 
 @pytest.mark.parametrize(*make_datastore_test_params("keytransform"))
@@ -112,7 +112,7 @@ async def test_lowercase_key_simple(DatastoreTests, Adapter, DictDatastore, enco
 		s3 = stack.push_async_exit(Adapter(DictDatastore()))
 		stores = [s1, s2, s3]
 
-		await DatastoreTests(stores).subtest_simple()
+		await DatastoreTests(stores, test_put_new=False).subtest_simple()
 
 
 @pytest.mark.parametrize(*make_datastore_test_params("keytransform", "LowercaseKey"))
@@ -160,7 +160,7 @@ async def test_namespace_simple(DatastoreTests, Adapter, DictDatastore, encode_f
 		s3 = stack.push_async_exit(Adapter(datastore.Key('c'), DictDatastore()))
 		stores = [s1, s2, s3]
 
-		await DatastoreTests(stores).subtest_simple()
+		await DatastoreTests(stores, test_put_new=True).subtest_simple()
 
 
 @pytest.mark.parametrize(*make_datastore_test_params("keytransform", "Namespace"))
@@ -285,7 +285,7 @@ async def test_nested_path_simple(DatastoreTests, Adapter, DictDatastore, encode
 		s4 = stack.push_async_exit(Adapter(DictDatastore(), length=1, depth=2))
 		stores = [s1, s2, s3, s4]
 
-		await DatastoreTests(stores).subtest_simple()
+		await DatastoreTests(stores, test_put_new=False).subtest_simple()
 
 
 @pytest.mark.parametrize(*make_datastore_test_params("keytransform", "NestedPath"))

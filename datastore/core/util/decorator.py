@@ -6,7 +6,7 @@ T_co = typing.TypeVar("T_co", covariant=True)
 
 class AwaitableWrapper(
 		typing.AsyncContextManager[T_co],
-		typing.Awaitable[typing.AsyncContextManager[T_co]],
+		typing.Awaitable[T_co],
 ):
 	_awaitable: typing.Awaitable[typing.AsyncContextManager[T_co]]
 	_value: typing.AsyncContextManager[T_co]
@@ -14,9 +14,11 @@ class AwaitableWrapper(
 	def __init__(self, awaitable: typing.Awaitable[typing.AsyncContextManager[T_co]]):
 		self._awaitable = awaitable
 	
-	def __await__(self) \
-	    -> typing.Generator[typing.Any, typing.Any, typing.AsyncContextManager[T_co]]:
-		return self._awaitable.__await__()
+	def __await__(self) -> typing.Generator[typing.Any, typing.Any, T_co]:
+		return typing.cast(
+			typing.Generator[typing.Any, typing.Any, T_co],
+			self._awaitable.__await__()
+		)
 	
 	async def __aenter__(self) -> T_co:
 		self._value = await self._awaitable

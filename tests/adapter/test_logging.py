@@ -7,7 +7,6 @@ import trio.testing
 
 from tests.adapter.conftest import make_datastore_test_params
 
-
 _Logger = logging.Logger
 if not typing.TYPE_CHECKING:
 	_Logger = logging.getLoggerClass()

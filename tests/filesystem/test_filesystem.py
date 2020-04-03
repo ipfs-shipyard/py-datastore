@@ -1,6 +1,6 @@
 import contextlib
-import os.path
 import json
+import os.path
 import queue as queue_
 import tempfile
 import traceback
@@ -57,8 +57,12 @@ async def concurrent_datastore(temp_path, queue):
 			try:
 				if op == "put":
 					await fs.put(key, data)
+				elif op == "put_new":
+					await fs.put_new(key, data)
 				elif op == "flush":
 					await fs.flush()
+				else:
+					assert False
 			except BaseException:
 				traceback.print_exc()
 			finally:
@@ -92,6 +96,7 @@ async def test_stats_concurrent(temp_path):
 				
 				# Perform concurrent write
 				queue.put(("put", datastore.Key("/b"), b"Hallo Welt"))
+				queue.put(("put_new", datastore.Key("/"), b"Hallo Welt"))
 				queue.join()
 				
 				# Our datastore wouldn't know about it yet
@@ -106,15 +111,16 @@ async def test_stats_concurrent(temp_path):
 				
 				# Write something more into our datastore
 				await fs.put(datastore.Key("/c"), b"1234")
+				await fs.put_new(datastore.Key("/"), b"1234")
 				
 				# Our datastore still will still only know about its changes
-				assert fs.datastore_stats().size == 8
+				assert fs.datastore_stats().size == 12
 				
 				# Flush our datastore after theirs
 				await fs.flush()
 				
 				# Now we see their change
-				assert fs.datastore_stats().size == 18
+				assert fs.datastore_stats().size == 32
 			finally:
 				queue.put(("quit", None, None))
 
@@ -135,8 +141,17 @@ async def test_stats_tracking(temp_path):
 		
 		assert fs.datastore_stats().size == 10
 		
-		# Remove datastore key
+		# Create new datastore key
+		key_new = await fs.put_new(datastore.Key("/"), b"TC")
+		
+		assert fs.datastore_stats().size == 12
+		
+		# Remove datastore keys
 		await fs.delete(datastore.Key("/a"))
+		
+		assert fs.datastore_stats().size == 2
+		
+		await fs.delete(key_new)
 		
 		assert fs.datastore_stats().size == 0
 

@@ -93,8 +93,8 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 	
 	
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
-	               create: bool, replace: bool) -> None:
-		"""Stores the object `value` named by `key`.
+	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
+		"""Stores the objects of the given object stream *value* at name *key*
 		
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
@@ -104,7 +104,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		key
 			Key naming `value`
 		value
-			The object to store
+			The objects to store
 		create
 			Create the given key if it does not exist?
 		replace
@@ -112,8 +112,53 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		"""
 		value_items = await value.collect()  #FIXME
 		value_bytes = self.serializer.dumps(value_items)
-		await self.child_datastore.put(key, value_bytes, create=create, replace=replace)
-
+		value_stream = util.stream.receive_stream_from(value_bytes)
+		await self.child_datastore._put(key, value_stream, create=create, replace=replace, **kwargs)
+	
+	
+	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveChannel[T_co],
+	                   **kwargs: typing.Any) -> key_.Key:
+		"""Stores the objects of the given object stream *value* below name *prefix*
+		
+		Serializes values on the way in, and stores the serialized data into the
+		``child_datastore``.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to create the the new target key
+		value
+			The objects to store
+		"""
+		value_items = await value.collect()  #FIXME
+		value_bytes = self.serializer.dumps(value_items)
+		value_stream = util.stream.receive_stream_from(value_bytes)
+		return await self.child_datastore._put_new(prefix, value_stream, **kwargs)
+	
+	
+	async def _put_new_indirect(self, prefix: key_.Key, **kwargs: typing.Any) \
+	      -> objectstore.Datastore._PUT_NEW_INDIRECT_RT[T_co]:
+		"""Stores the objects of the given object stream *value* below name *prefix*
+		
+		Serializes values on the way in, and stores the serialized data into the
+		``child_datastore``.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to create the the new target key
+		value
+			The objects to store
+		"""
+		key, callback = await self.child_datastore._put_new_indirect(prefix, **kwargs)
+		
+		async def callback_wrapper(value: util.stream.ReceiveChannel[T_co]) -> None:
+			value_items = await value.collect()  #FIXME
+			value_bytes = self.serializer.dumps(value_items)
+			value_stream = util.stream.receive_stream_from(value_bytes)
+			await callback(value_stream)
+		return key, callback_wrapper
+	
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
