@@ -729,9 +729,10 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""return the object path for `key`."""
 		return self.root_path / self.relative_object_path(key, suffix=suffix)
 	
-	def verify_key_valid(self, key: datastore.Key) -> typing_Literal_True:
+	def verify_key_valid(self, key: datastore.Key, allow_new: bool = True) -> typing_Literal_True:
 		for idx, item in enumerate(key.list):
-			if item.startswith(".") and (idx < (len(key.list) - 1) or not item.startswith(".new-")):
+			if item.startswith(".") \
+			   and (not allow_new or idx < (len(key.list) - 1) or not item.startswith(".new-")):
 				raise RuntimeError(f"Cannot access dot-path {'/'.join(key.list[:(idx + 1)])}")
 		
 		return True
@@ -1123,6 +1124,75 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				if exc.errno == errno.ENOTEMPTY:
 					return
 				raise
+	
+	
+	def _rename_replace_sync(
+			self,
+			source: typing.Union[os_PathLike_str, str],
+			target: typing.Union[os_PathLike_str, str]
+	) -> None:
+		source = pathlib.Path(source)
+		target = pathlib.Path(target)
+		if self._stats is None:
+			source.replace(target)
+			return
+		
+		assert self._stats_lock.locked()
+		
+		temp_dir    = target.parent
+		temp_prefix = f".tmp-{target.name}-"
+		
+		# Move target file to temporary location (frees source file)
+		temp_path = move_to_tempfile_sync(source, dir=temp_dir, prefix=temp_prefix)
+		
+		# Exchange temporary file with target, like in :meth:`put`
+		self._put_replace_sync(temp_path, target)
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Moves key *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key, if *replace* is ``False`` this must not exist
+		replace
+			Should an existing key at name *key2* be replaced
+		
+		Raises
+		------
+		KeyError
+			Key *key1* did not exist in this datastore
+		KeyError
+			Key *key2* already exists in this datastore, but *replace* was not ``True``
+		"""
+		# Validate that the keys are well-formed
+		assert self.verify_key_valid(key1)
+		assert self.verify_key_valid(key2, False)
+		
+		path1 = trio.Path(self.object_path(key1))
+		path2 = trio.Path(self.object_path(key2))
+		
+		if not replace:
+			# Just do the replace and fail if it didn't succeed
+			#
+			# No weird accounting stuff here since this operation never changes the
+			# size of datastore.
+			try:
+				await run_blocking_nointr(rename_noreplace.rename_noreplace, path1, path2)
+			except FileNotFoundError as exc:
+				raise KeyError(key1) from exc
+			except FileExistsError as exc:
+				raise KeyError(key2) from exc
+		else:
+			try:
+				async with self._stats_lock:  # type: ignore[union-attr]
+					await run_blocking_nointr(self._rename_replace_sync, path1, path2)
+			except FileNotFoundError as exc:
+				raise KeyError(key1) from exc
 	
 	
 	async def stat(self, key: datastore.Key) -> datastore.util.StreamMetadata:

@@ -206,6 +206,30 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		return False
 	
 	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *key1* to *key2*"""
+		renamed: typing.List[DS] = []
+		
+		async def do_rename(store: DS) -> None:  # type: ignore[return]  # mypy bug
+			await store.rename(key1, key2, replace=replace)
+			renamed.append(store)
+		
+		try:
+			async with trio.open_nursery() as nursery:
+				for store in self._stores:
+					nursery.start_soon(do_rename, store)
+		except BaseException:
+			# Try to undo our changes
+			with trio.CancelScope(shield=True):
+				for store in reversed(renamed):
+					try:
+						await store.rename(key2, key1, replace=False)
+					except BaseException:
+						pass  # Swallow all exceptions
+			raise
+	
+	
 	async def stat(self, key: datastore.Key) -> MD:
 		"""Returns the metadata of the object named by key. Checks each
 		datastore in order."""

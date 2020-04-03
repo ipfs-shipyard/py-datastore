@@ -112,6 +112,19 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		return await ds.contains(subkey)
 	
 	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		ds1, _, subkey1 = self._find_mountpoint(key1)
+		ds2, _, subkey2 = self._find_mountpoint(key2)
+		if ds1 is None:
+			raise KeyError(key1)
+		if ds2 is None:
+			raise RuntimeError(f"Cannot rename to {key2}: No datastore mounted at that path")
+		if ds1 is not ds2:
+			raise RuntimeError(f"Cannot rename {key1} to {key2}: Cross-mount renames are not supported")
+		await ds1.rename(subkey1, subkey2, replace=replace)
+	
+	
 	async def stat(self, key: datastore.Key) -> MD:
 		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:

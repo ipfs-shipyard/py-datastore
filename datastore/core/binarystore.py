@@ -256,6 +256,33 @@ class Datastore(trio.abc.AsyncResource):
 		return await (await self.get(key)).collect()
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key, if *replace* is ``False`` this must not exist
+		replace
+			Should an existing key at name *key2* be replaced
+		
+		Raises
+		------
+		KeyError
+			There was no data by name *key1* in the datastore
+		KeyError
+			There was already some data at name *key2* in the datastore,
+			but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred
+		NotImplementedError
+			This datastore does not support this operation
+		"""
+		raise NotImplementedError()
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
 		"""Returns any metadata associated with the data stream named by `key`
 		or raises `KeyError` otherwise
@@ -481,6 +508,31 @@ class DictDatastore(Datastore):
 		return key in self._collection(key)
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key, if *replace* is ``False`` this must not exist
+		replace
+			Should an existing key at name *key2* be replaced
+		"""
+		if key1 == key2:
+			return
+		
+		collection1 = self._collection(key1)
+		collection2 = self._collection(key2)
+		if key1 not in collection1:
+			raise KeyError(key1)
+		if not replace and key2 in collection2:
+			raise KeyError(key2)
+		collection2[key2] = collection1[key1]
+		del collection1[key1]
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
 		"""Returns the length of the byte sequence named by `key` if it exists.
 		
@@ -533,6 +585,7 @@ class Adapter(Datastore):
 	FORWARD_PUT_NEW:   bool = False  # Not always true
 	FORWARD_PUT_NEW_D: typing.Optional[bool] = None  # Defaults to the value of `FORWARD_PUT_NEW`
 	FORWARD_PUT_NEW_I: typing.Optional[bool] = None  # Defaults to the value of `FORWARD_PUT_NEW`
+	FORWARD_RENAME:    bool = False
 	FORWARD_STAT:      bool = False
 	
 	child_datastore: Datastore
@@ -702,6 +755,36 @@ class Adapter(Datastore):
 			return await self.child_datastore.contains(key)
 		else:
 			return await Datastore.contains(self, key)
+	
+	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key, if *replace* is ``False`` this must not exist
+		replace
+			Should an existing key at name *key2* be replaced
+		
+		Raises
+		------
+		KeyError
+			Key *key1* did not exist in the child datastore
+		KeyError
+			Key *key2* already exists in the child datastore, but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred in the child datastore
+		NotImplementedError
+			``FORWARD_RENAME`` is not ``True`` or the child datastore does not
+			support this operation
+		"""
+		if self.FORWARD_RENAME:
+			return await self.child_datastore.rename(key1, key2, replace=replace)
+		else:
+			return await Datastore.rename(self, key1, key2, replace=replace)  # Will raise
 	
 	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:

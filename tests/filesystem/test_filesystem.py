@@ -111,16 +111,22 @@ async def test_stats_concurrent(temp_path):
 				
 				# Write something more into our datastore
 				await fs.put(datastore.Key("/c"), b"1234")
-				await fs.put_new(datastore.Key("/"), b"1234")
+				key_new = await fs.put_new(datastore.Key("/"), b"1234")
 				
 				# Our datastore still will still only know about its changes
 				assert fs.datastore_stats().size == 12
+				
+				# Let's replace "/c"
+				await fs.rename(key_new, datastore.Key("/c"))
+				
+				# Our datastore still will still only know about its changes
+				assert fs.datastore_stats().size == 8
 				
 				# Flush our datastore after theirs
 				await fs.flush()
 				
 				# Now we see their change
-				assert fs.datastore_stats().size == 32
+				assert fs.datastore_stats().size == 28
 			finally:
 				queue.put(("quit", None, None))
 
