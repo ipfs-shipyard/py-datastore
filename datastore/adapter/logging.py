@@ -23,6 +23,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
 	FORWARD_PUT_NEW  = True
+	FORWARD_RENAME   = True
 	FORWARD_STAT     = True
 	
 	logger: logging.Logger
@@ -104,6 +105,16 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		"""
 		self.logger.info('%s: contains %s', self, key)
 		return await super().contains(key)  # type: ignore[misc, no-any-return]
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *key1* to *key2*
+		
+		LoggingDatastore logs the change.
+		"""
+		self.logger.info('%s: rename %s → %s', self, key1, key2)
+		await super().rename(key1, key2, replace=replace)  # type: ignore[misc]
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:

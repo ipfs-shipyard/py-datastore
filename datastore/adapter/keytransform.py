@@ -51,7 +51,8 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
-	FORWARD_PUT_NEW  = False  # Still not true in all cases
+	FORWARD_PUT_NEW  = False  # Only true if we can also transform the returned name back
+	FORWARD_RENAME   = True
 	FORWARD_STAT     = True
 	
 	key_transform_fn: _support.FunctionProperty[KEY_TRANSFORM_T]
@@ -124,6 +125,13 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	async def contains(self, key: datastore.Key) -> bool:
 		"""Returns whether the object named by key is in this datastore."""
 		return await super().contains(self._transform_key(key))  # type: ignore[misc, no-any-return]
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *keytransform(key1)* to *keytransform(key2)*"""
+		await super().rename(self._transform_key(key1),  # type: ignore[misc]
+		                     self._transform_key(key2), replace=replace)
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:

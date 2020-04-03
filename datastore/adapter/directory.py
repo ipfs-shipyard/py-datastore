@@ -158,6 +158,7 @@ class ObjectDatastore(
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
 	FORWARD_PUT_NEW  = True
+	FORWARD_RENAME   = True
 	FORWARD_STAT     = True
 	
 	
@@ -223,6 +224,22 @@ class ObjectDatastore(
 		
 		dir_key = key.parent.instance('directory')
 		await super().directory_remove(dir_key, key, missing_ok=True)
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *key1* to *key2*
+		
+		DirectoryTreeDatastore removes the previous directory entry and add a new one.
+		"""
+		await super().rename(key1, key2, replace=replace)
+		
+		if key1 != key2:
+			dir_key1 = key1.parent.instance('directory')
+			await super().directory_remove(dir_key1, key1, missing_ok=True)
+			
+			dir_key2 = key2.parent.instance('directory')
+			await super().directory_add(dir_key2, key2, create=True)
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:

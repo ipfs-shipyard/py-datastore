@@ -71,15 +71,17 @@ class DatastoreTests(typing.Generic[DS, ET]):
 	length: int
 	is_binary: bool
 	test_put_new: bool
+	test_rename: bool
 	put_new_keys: typing.Dict[int, typing.List[datastore.Key]]
 	
 	#FIXME: For some reason `numelems` increases test runtime with at least n²
 	def __init__(self, stores: typing.List[DS], test_put_new: bool = True,
-	             numelems: int = 10):  # 1000):
+	             test_rename: bool = True, numelems: int = 10):  # 1000):
 		self.stores = stores
 		self.numelems = numelems
 		self.length = 0
 		self.test_put_new = test_put_new
+		self.test_rename = test_rename
 		if test_put_new:
 			self.put_new_keys = {idx: [] for idx in range(len(stores))}
 		
@@ -243,6 +245,65 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		del n
 	
 	
+	async def subtest_rename(self) -> None:
+		sn: DS
+		value: int
+		key_a: datastore.Key
+		key_b: datastore.Key
+		key_c: datastore.Key
+		
+		if not self.test_rename:
+			return
+		
+		length: int = self.length
+		self.check_length()
+		
+		for value in range(0, self.numelems):
+			key_a = self.pkey.child(str(value))
+			key_b = self.pkey.child(str(value) + "_" + str(value))
+			for sn in self.stores:
+				assert await sn.contains(key_a)
+				assert not await sn.contains(key_b)
+				
+				# Rename to self must always succeed
+				await sn.rename(key_a, key_a)
+				
+				assert await sn.contains(key_a)
+				assert not await sn.contains(key_b)
+				
+				# Rename to something else
+				await sn.rename(key_a, key_b)
+				
+				assert not await sn.contains(key_a)
+				assert await sn.contains(key_b)
+		
+		self.check_length()
+		assert self.length == length
+		
+		for value in range(0, self.numelems):
+			key_a = self.pkey.child(str(value))
+			key_b = self.pkey.child(str(value) + "_" + str(value))
+			key_c = self.pkey.child(str(self.numelems - value - 1))
+			for sn in self.stores:
+				assert await sn.contains(key_b)
+				assert not await sn.contains(key_c)
+				
+				# Rename to “opposite” name
+				await sn.rename(key_b, key_c)
+				
+				assert not await sn.contains(key_b)
+				assert await sn.contains(key_c)
+				
+				if value > (self.numelems / 2):
+					assert await sn.contains(key_a)
+					with raises(KeyError):
+						await sn.rename(key_c, key_a, replace=False)
+					assert await sn.contains(key_c)
+		
+		self.check_length()
+		assert self.length == length
+	
+	
 	async def subtest_update(self) -> None:
 		sn: DS
 		value: int
@@ -307,6 +368,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		await self.subtest_remove_nonexistent()
 		await self.subtest_insert_elems()
 		#await self.subtest_queries()  #FIXME: Query is broken
+		await self.subtest_rename()
 		await self.subtest_update()
 		await self.subtest_remove()
 

@@ -213,6 +213,32 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		return await self.child_datastore.contains(key)
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the content at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key, if *replace* is ``False`` this must not exist
+		replace
+			Should an existing key at name *key2* be replaced
+		
+		Raises
+		------
+		KeyError
+			Key *key1* does not exist in the child datastore
+		KeyError
+			Key *key2* already exists in the child datastore, but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred in the child datastore
+		NotImplementedError
+			The child datastore does not support this operation
+		"""
+		await self.child_datastore.rename(key1, key2, replace=replace)
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
 		"""Returns whether an object named by `key` exists
 		
