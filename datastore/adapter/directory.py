@@ -157,6 +157,7 @@ class ObjectDatastore(
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
+	FORWARD_PUT_NEW  = True
 	FORWARD_STAT     = True
 	
 	
@@ -174,6 +175,44 @@ class ObjectDatastore(
 		# Add entry to directory
 		dir_key = key.parent.instance('directory')
 		await super().directory_add(dir_key, key, create=True)
+	
+	
+	async def _put_new(self, prefix: datastore.Key, value: datastore.abc.ReceiveChannel[T_co],
+	                   **kwargs: typing.Any) -> datastore.Key:
+		"""Stores the object `value` named by `key`.
+		   DirectoryTreeDatastore stores a directory entry.
+		"""
+		key = await super()._put_new(prefix, value, **kwargs)
+		
+		# ignore root
+		if key.is_top_level():
+			return key
+		
+		# Add entry to directory
+		dir_key = key.parent.instance('directory')
+		await super().directory_add(dir_key, key, create=True)
+		
+		return key
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
+	      -> datastore.abc.ObjectAdapter._PUT_NEW_INDIRECT_RT[T_co]:
+		"""Stores the object `value` named by `key`.
+		   DirectoryTreeDatastore stores a directory entry.
+		"""
+		key, callback = await super()._put_new_indirect(prefix, **kwargs)
+		
+		# ignore root
+		if key.is_top_level():
+			return key, callback
+		
+		async def callback_wrapper(value: datastore.abc.ReceiveChannel[T_co]) -> None:
+			# Add entry to directory
+			dir_key = key.parent.instance('directory')
+			await super(ObjectDatastore, self).directory_add(dir_key, key, create=True)
+			
+			await callback(value)
+		return key, callback_wrapper
 	
 	
 	async def delete(self, key: datastore.Key) -> None:

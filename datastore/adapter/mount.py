@@ -30,7 +30,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	
 	
 	def _find_mountpoint(self, key: datastore.Key) \
-	    -> typing.Tuple[typing.Optional[DS], datastore.Key]:
+	    -> typing.Tuple[typing.Optional[DS], datastore.Key, datastore.Key]:
 		current = self.mounts
 		
 		ds = None
@@ -46,7 +46,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 			
 			current = mount[0]
 		
-		return ds, datastore.Key(key.list[(offset + 1):])
+		return ds, datastore.Key(key.list[:offset]), datastore.Key(key.list[(offset + 1):])
 	
 	
 	def _store_iter(self, *, mount_tree: mount_tree_t[DS] = None) -> typing.Iterator[DS]:
@@ -62,42 +62,58 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	
 	
 	async def get(self, key: datastore.Key) -> RT:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
 		return await ds.get(subkey)  # type: ignore[return-value]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
 		return await ds.get_all(subkey)  # type: ignore[return-value]
 	
 	
 	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise RuntimeError(f"Cannot put key {key}: No datastore mounted at that path")
-		await ds.put(subkey, value, **kwargs)
+		await ds._put(subkey, value, **kwargs)  # type: ignore[arg-type]
+	
+	async def _put_new(self, prefix: datastore.Key, value: RT, **kwargs: typing.Any) \
+	      -> datastore.Key:
+		ds, dskey, subkey = self._find_mountpoint(prefix)
+		if ds is None:
+			raise RuntimeError(f"Cannot put below key {prefix}: No datastore mounted at that path")
+		return dskey.child(await ds._put_new(subkey, value, **kwargs))  # type: ignore[arg-type]
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
+	      -> typing.Tuple[datastore.Key, typing.Callable[[RT], typing.Awaitable[None]]]:
+		ds, dskey, subkey = self._find_mountpoint(prefix)
+		if ds is None:
+			raise RuntimeError(f"Cannot put below key {prefix}: No datastore mounted at that path")
+		new_subkey, callback = await ds._put_new_indirect(subkey, **kwargs)
+		return dskey.child(new_subkey), callback  # type: ignore[return-value]
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
 		await ds.delete(subkey)
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			return False
 		return await ds.contains(subkey)
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
-		ds, subkey = self._find_mountpoint(key)
+		ds, _, subkey = self._find_mountpoint(key)
 		if ds is None:
 			raise KeyError(key)
 		return await ds.stat(subkey)  # type: ignore[return-value]
@@ -126,7 +142,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		_seen = _seen if _seen is not None else set()
 		
 		if selector is not None:
-			ds, subkey = self._find_mountpoint(selector)
+			ds, _, subkey = self._find_mountpoint(selector)
 			if ds is None:
 				raise RuntimeError(f"Cannot retrieve stats of datastore mounted at {selector}: "
 				                   f"No datastore mounted at that path")

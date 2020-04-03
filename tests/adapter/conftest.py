@@ -3,7 +3,6 @@ from typing import Callable, List, Tuple, Type, TypeVar, Union
 
 import datastore
 
-
 T_co = TypeVar("T_co", covariant=True)
 
 

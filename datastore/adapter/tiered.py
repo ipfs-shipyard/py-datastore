@@ -110,7 +110,58 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			#
 			# Without this the nursery and its attached tasks will stay open
 			# and cause an undecipherable “the init task should be the last
-			# task to exit” error one loop exit.
+			# task to exit” error on loop exit.
+			await result_stream.aclose()
+			raise
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
+	      -> typing.Tuple[datastore.Key, typing.Callable[[RT], typing.Awaitable[None]]]:
+		"""Stores the object in all underlying datastores."""
+		result_stream: typing.Union[
+			datastore.core.util.stream.TeeingReceiveStream,
+			datastore.core.util.stream.TeeingReceiveChannel[T_co]
+		]
+		if isinstance(self, datastore.abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(None)
+		elif isinstance(self, datastore.abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(None)
+		else:
+			assert False
+		
+		kwargs2 = kwargs.copy()
+		kwargs2["create"]  = True
+		kwargs2["replace"] = False
+		
+		try:
+			# Call `_put_new_indirect` to determine the key to create up-front
+			key, callback = await self._stores[-1]._put_new_indirect(prefix, **kwargs)
+			
+			try:
+				# Do a regular `put` with the received key
+				for store in self._stores:
+					if store is self._stores[-1]:
+						break  # Last store drives this `TeeingReceiveStream`
+					result_stream.start_task_soon(run_put_task, store, key, kwargs2)
+				
+				async def callback_wrapper(value: RT) -> None:  # type: ignore[return]  # mypy bug
+					result_stream.source = value
+					await callback(result_stream)  # type: ignore[arg-type]
+				
+				return key, callback_wrapper
+			except BaseException:
+				# Propage a cancellation to the final datastore to release any resources
+				# it may hold in the expectation of being called “soon”
+				with trio.CancelScope(deadline=0):
+					await callback(result_stream)  # type: ignore[arg-type]
+				raise
+		except BaseException:
+			# Ensure the other tasks are immediately canceled if the final
+			# store's put raises an exception
+			#
+			# Without this the nursery and its attached tasks will stay open
+			# and cause an undecipherable “the init task should be the last
+			# task to exit” error on loop exit.
 			await result_stream.aclose()
 			raise
 	

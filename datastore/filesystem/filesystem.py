@@ -718,13 +718,23 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		"""Returns the `path` for given `key`"""
 		return self.root_path / self.relative_path(key)
 
-	def relative_object_path(self, key: datastore.Key) -> pathlib.PurePath:
+	def relative_object_path(self, key: datastore.Key, *, suffix: bool = True) -> pathlib.PurePath:
 		"""Returns the relative path for object pointed by `key`."""
-		return self.relative_path(key).with_suffix(self.object_extension)
+		path = self.relative_path(key)
+		if suffix:
+			path = path.with_suffix(self.object_extension)
+		return path
 
-	def object_path(self, key: datastore.Key) -> pathlib.PurePath:
+	def object_path(self, key: datastore.Key, *, suffix: bool = True) -> pathlib.PurePath:
 		"""return the object path for `key`."""
-		return self.root_path / self.relative_object_path(key)
+		return self.root_path / self.relative_object_path(key, suffix=suffix)
+	
+	def verify_key_valid(self, key: datastore.Key) -> typing_Literal_True:
+		for idx, item in enumerate(key.list):
+			if item.startswith(".") and (idx < (len(key.list) - 1) or not item.startswith(".new-")):
+				raise RuntimeError(f"Cannot access dot-path {'/'.join(key.list[:(idx + 1)])}")
+		
+		return True
 	
 	
 	# Datastore implementation
@@ -748,6 +758,11 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		RuntimeError
 			The given ``key`` names a subtree, not a value
 		"""
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(key)
+		
 		path = self.object_path(key)
 		try:
 			return await FileReader.from_path(path)
@@ -778,6 +793,11 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		RuntimeError
 			The given ``key`` names a subtree, not a value
 		"""
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(key)
+		
 		path = trio.Path(self.object_path(key))
 		try:
 			return typing.cast(bytes, await path.read_bytes())
@@ -802,7 +822,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		assert self._stats_lock.locked()
 		
 		target_dir    = target.parent
-		target_prefix = f".{target.name}.tmp-"
+		target_prefix = f".tmp-{target.name}-"
 		try:
 			# Atomically exchange temporary and production file
 			# (only works on Linux and macOS, but not *BSD and Windows, unfortunately)
@@ -836,6 +856,13 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				except FileExistsError:
 					continue
 	
+	async def _put_replace(
+			self,
+			source: typing.Union[os_PathLike_str, str, trio.Path],
+			target: typing.Union[os_PathLike_str, str, trio.Path]
+	) -> None:
+		await run_blocking_nointr(self._put_replace_sync, source, target)
+	
 	async def _receive_and_write(self, file: 'trio._file_io.AsyncIOWrapper',
 	                             value: datastore.abc.ReceiveStream) -> None:
 		chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
@@ -849,8 +876,8 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			
 			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
 	
-	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveStream, *,
-	               create: bool, replace: bool) -> None:
+	async def _put(self, key: datastore.Key,  # type: ignore[override]
+	               value: datastore.abc.ReceiveStream, *, create: bool, replace: bool) -> None:
 		"""Stores or replaces the data named by `key` with `value`
 		
 		Arguments
@@ -871,24 +898,27 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		KeyError
 			The given `key` already exists and `replace` is not ``True``.
 		RuntimeError
-			The given `key` names a subtree, not a value OR the contains a
+			The given `key` names a subtree, not a value OR contains a
 			value item as part of the key path
 		"""
 		assert create or replace
 		
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(key)
+		
 		path = trio.Path(self.object_path(key))
 		path_dir    = path.parent
-		path_prefix = f".{path.name}.tmp-"
+		path_prefix = f".tmp-{path.name}-"
+		is_special  = path.name.startswith(".")
 		
-		if create:
-			# Ensure containing directory exists
-			try:
-				await path_dir.mkdir(parents=True, exist_ok=True)
-			except FileExistsError as exc:
-				# Should hopefully only happen if `object_extension` is `""`
-				raise RuntimeError(f"Key '{key}' requires containing directory "
-				                   f"'{path_dir}' to not be a value") from exc
-		else:
+		if is_special and not replace:
+			# Cannot create special files, so there is nothing that this method
+			# may do if `replace` is False
+			raise KeyError(key)
+		
+		if not create:
 			# Remove existing key with accounting and continue as if create
 			# were set to `True`
 			#
@@ -897,8 +927,21 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			# so that the exception generated by violating this constraint
 			# is raised when opening the file, rather then when closing it
 			await self.delete(key)
+		elif not is_special:
+			# Ensure containing directory exists – unless its a special dot-file as those are never
+			# actually created
+			try:
+				await path_dir.mkdir(parents=True, exist_ok=True)
+			except FileExistsError as exc:
+				# Should hopefully only happen if `object_extension` is `""`
+				raise RuntimeError(f"Key '{key}' requires containing directory "
+				                   f"'{path_dir}' to not be a value") from exc
+		
 		
 		try:
+			# Attempt to create the target file – again, except for special dot-files
+			mode = "xb" if not is_special else "r+b"
+			
 			if self._stats is None:
 				# Since accounting doesn't matter in this case, there is no
 				# issue with getting the stats wrong (see next section) and
@@ -907,19 +950,25 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 				# file being opened twice by two different processes, likely
 				# corrupting its contents, so we still need to use a temporary
 				# file to avoid this in that case.
-				async with await path.open("xb") as file:
+				async with await path.open(mode) as file:
 					await self._receive_and_write(file, value)
 				return
-			elif not replace:
-				# Create target file if it does not exist, but don't write to
-				# it to ensure that we don't end up with broken accounting if
-				# a concurrent process deletes/replaces it while we are still
-				# writing its contents.
-				async with await path.open("xb") as file:
+			elif not replace or is_special:
+				# Create target file if it does not exist (for non-special files),
+				# but don't write to it to ensure that we don't end up with broken
+				# accounting if a concurrent process deletes/replaces it while we
+				# are still writing its contents.
+				#
+				# For special files this is instead used to ensure that the target
+				# *does* exist.
+				async with await path.open(mode) as file:
 					pass
 		except IsADirectoryError as exc:
 			# Should only happen if `object_extension` is `""`
-			raise RuntimeError(f"Key '{key}' names a subtree, not a value") from exc
+			raise RuntimeError(f"Key \"{key}\" names a subtree, not a value") from exc
+		except FileNotFoundError as exc:
+			# Attempted to create a special file
+			raise RuntimeError(f"Key \"{key}\" names a special dot-file that cannot be created") from exc
 		except FileExistsError as exc:
 			# Error out if the target file already exists …
 			if not replace:
@@ -933,7 +982,76 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			await self._receive_and_write(temp_file, value)
 		
 		async with self._stats_lock:  # type: ignore[union-attr]
-			await run_blocking_nointr(self._put_replace_sync, temp_file.name, path)
+			await self._put_replace(temp_file.name, path)
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key  # type: ignore[override]
+	) -> datastore.abc.BinaryDatastore._PUT_NEW_INDIRECT_RT:
+		"""Stores data in a new subkey below *prefix*
+		
+		Arguments
+		---------
+		prefix
+			Key below which to create a new binary data slot to store data at
+		
+		Raises
+		------
+		RuntimeError
+			The given *prefix* names a value, not a subtree OR contains a
+			value item as part of the key path
+		"""
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(prefix)
+		
+		path_dir      = trio.Path(self.object_path(prefix, suffix=False))
+		path_prefix_t = ".tmp-new-"
+		path_prefix_f = ".new-"
+		
+		# Ensure containing directory exists
+		try:
+			await path_dir.mkdir(parents=True, exist_ok=True)
+		except FileExistsError as exc:
+			# Should hopefully only happen if `object_extension` is `""`
+			raise RuntimeError(f"Adding a new file below \"{path_dir}\" requires that path "
+			                   f"to not be a value") from exc
+		
+		# Create target file
+		target_file = await make_named_tempfile(mode="wb", dir=path_dir, prefix=path_prefix_f,
+		                                        suffix=self.object_extension, delete=False)
+		
+		# Write to extra temporary file if stats tracking to account for collisions, else write
+		# directly to target file
+		if self._stats is not None:
+			try:
+				file = await make_named_tempfile(mode="wb", dir=path_dir,
+				                                 prefix=path_prefix_t, delete=False)
+			finally:
+				# This file will not be directly written to
+				await target_file.aclose()
+		else:
+			file = target_file
+		
+		# Return a pretty uninspired callback function that reads data from the stream
+		# and writes it to the target file
+		async def callback(value: datastore.abc.ReceiveStream) -> None:
+			try:
+				await self._receive_and_write(file, value)
+			except BaseException:
+				try:
+					await file.aclose()
+				finally:
+					with trio.CancelScope(shield=True):
+						await file.unlink()
+				raise
+			else:
+				await file.aclose()
+				
+				if self._stats is not None:
+					async with self._stats_lock:  # type: ignore[union-attr]
+						await self._put_replace(file.name, target_file.name)
+		return prefix.child(pathlib.Path(target_file.name).name[:-len(self.object_extension)]), callback
 	
 	
 	def _delete_sync(self, path: typing.Union[os_PathLike_str, str]) -> None:
@@ -945,7 +1063,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		assert self._stats_lock.locked()
 		
 		path_dir    = path.parent
-		path_prefix = f".{path.name}.tmp-"
+		path_prefix = f".tmp-{path.name}-"
 		
 		try:
 			temp_path = move_to_tempfile_sync(path, dir=path_dir, prefix=path_prefix)
@@ -969,6 +1087,11 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		KeyError
 			The given object was not present in this datastore
 		"""
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(key)
+		
 		path = trio.Path(self.object_path(key))
 		
 		try:
@@ -1017,6 +1140,11 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		RuntimeError
 			The given ``key`` names a subtree, not a value
 		"""
+		# Validate that the key is well-formed
+		#
+		# Usage of assert here will cause this call to be optimized away in `-O` mode.
+		assert self.verify_key_valid(key)
+		
 		path = self.object_path(key)
 		try:
 			stat = await run_blocking_intr(statx.stat, path)

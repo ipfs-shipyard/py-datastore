@@ -87,7 +87,8 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 	_closed: bool
 	_shared: _TeeingChannelShared[T_co]
 	
-	def __init__(self, source: trio.abc.ReceiveChannel[T_co], buffer_size: int = 0, *,
+	def __init__(self, source: typing.Optional[trio.abc.ReceiveChannel[T_co]],
+	             buffer_size: int = 0, *,
 	             _shared: typing.Optional[_TeeingChannelShared[T_co]] = None):
 		# Try to copy extra attributes from source channel
 		super().__init__(
@@ -120,6 +121,20 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 			raise RuntimeError("Failed to initialize nursery synchronously")
 	
 	
+	@property
+	def source(self) -> typing.Optional[trio.abc.ReceiveChannel[T_co]]:
+		return self._shared.source
+	
+	
+	@source.setter
+	def source(self, source: trio.abc.ReceiveChannel[T_co]) -> None:
+		if self._shared.source is not None or self._closed or self._shared.refcount > 1:
+			raise NotImplementedError("Late-setting source may only be done once and must preceed "
+			                          "any calls to `clone`, `receive` or `aclose`")
+		
+		self._shared.source = source
+	
+	
 	async def start_task(self, func: '_TeeingStartTaskCallback[trio.abc.ReceiveChannel[T_co], T]',
 	                     *args: typing.Any) -> T:
 		async with self._shared.lock:  # type: ignore[attr-defined] # upstream type bug
@@ -146,11 +161,7 @@ class TeeingReceiveChannel(ReceiveChannel[T_co], typing.Generic[T_co]):
 		if self._closed:
 			raise trio.ClosedResourceError()
 		
-		# Cast source value to ignore the possible `None` variant as the
-		# passed source value will be ignored if we provide `_shared`
-		source = typing.cast(trio.abc.ReceiveChannel[T_co], self._shared.source)
-		
-		channel = TeeingReceiveChannel(source, _shared=self._shared)
+		channel = TeeingReceiveChannel(self._shared.source, _shared=self._shared)
 		self._shared.refcount += 1
 		return channel
 	
@@ -522,7 +533,7 @@ class TeeingReceiveStream(ReceiveStream):
 	_closed:  bool
 	_source:  typing.Optional[trio.abc.ReceiveStream]
 	
-	def __init__(self, source: trio.abc.ReceiveStream, buffer_size: int = 0):
+	def __init__(self, source: typing.Optional[trio.abc.ReceiveStream], buffer_size: int = 0):
 		# Try to copy extra attributes from source stream
 		super().__init__(
 			size  = getattr(source, "size", None),
@@ -546,6 +557,20 @@ class TeeingReceiveStream(ReceiveStream):
 			self._nursery = exc.args[0]
 		else:
 			raise RuntimeError("Failed to initialize nursery synchronously")
+	
+	
+	@property
+	def source(self) -> typing.Optional[trio.abc.ReceiveStream]:
+		return self._source
+	
+	
+	@source.setter
+	def source(self, source: trio.abc.ReceiveStream) -> None:
+		if self._source is not None or self._closed:
+			raise NotImplementedError("Late-setting source may only be done once and must preceed "
+			                          "any calls to `receive_some` or `aclose`")
+		
+		self._source = source
 	
 	
 	async def start_task(self, func: '_TeeingStartTaskCallback[trio.abc.ReceiveStream, T]',
