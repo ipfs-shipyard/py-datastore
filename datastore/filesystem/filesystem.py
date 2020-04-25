@@ -1158,9 +1158,10 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		key1
 			The key to rename, must exist
 		key2
-			The new name of the key, if *replace* is ``False`` this must not exist
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
 		replace
-			Should an existing key at name *key2* be replaced
+			Should an existing key at name *key2* be replaced?
 		
 		Raises
 		------

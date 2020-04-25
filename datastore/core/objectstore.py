@@ -294,9 +294,10 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 		key1
 			The key to rename, must exist
 		key2
-			The new name of the key, if *replace* is ``False`` this must not exist
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
 		replace
-			Should an existing key at name *key2* be replaced
+			Should an existing key at name *key2* be replaced?
 		
 		Raises
 		------
@@ -552,9 +553,10 @@ class DictDatastore(Datastore[T_co], typing.Generic[T_co]):
 		key1
 			The key to rename, must exist
 		key2
-			The new name of the key, if *replace* is ``False`` this must not exist
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
 		replace
-			Should an existing key at name *key2* be replaced
+			Should an existing key at name *key2* be replaced?
 		"""
 		if key1 == key2:
 			return
@@ -832,9 +834,10 @@ class Adapter(Datastore[T_co], typing.Generic[T_co, U_co]):
 		key1
 			The key to rename, must exist
 		key2
-			The new name of the key, if *replace* is ``False`` this must not exist
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
 		replace
-			Should an existing key at name *key2* be replaced
+			Should an existing key at name *key2* be replaced?
 		
 		Raises
 		------
