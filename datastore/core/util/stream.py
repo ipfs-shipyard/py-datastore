@@ -495,6 +495,15 @@ class ReceiveStream(trio.abc.ReceiveStream, metadata.StreamMetadata):
 					break
 				value += chunk
 		return bytes(value)
+	
+	def __aiter__(self):
+		return self
+
+	async def __anext__(self):
+		value = await self.receive_some()
+		if len(value) < 1:
+			raise StopAsyncIteration
+		return value
 
 
 class TeeingReceiveStream(ReceiveStream):

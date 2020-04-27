@@ -15,7 +15,8 @@ __all__ = (
 	"BinaryNullDatastore", "BinaryDictDatastore",
 	"ObjectNullDatastore", "ObjectDictDatastore",
 	"Query", "Cursor",
-	"SerializerAdapter",
+	"SerializerAdapter", "SerializingError",
+	"SerializeError", "ParseError",
 	
 	"abc", "typing", "util"
 )
@@ -38,6 +39,9 @@ from .core.query import Cursor
 
 # import core.serialize
 from .core.serialize import SerializerAdapter
+from .core.serialize import SerializingError
+from .core.serialize import SerializeError
+from .core.serialize import ParseError
 
 
 ### Exposed submodules ###
