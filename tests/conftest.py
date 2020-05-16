@@ -7,7 +7,7 @@ import trio
 
 import datastore
 
-DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore, datastore.abc.ObjectDatastore[typing.Any])
+DS = typing.TypeVar("DS", datastore.datastore_abc.BinaryDatastore, datastore.datastore_abc.ObjectDatastore[typing.Any])
 ET = typing.TypeVar("ET", bytes, typing.List[object])
 Query = typing.Any
 
@@ -85,7 +85,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		if test_put_new:
 			self.put_new_keys = {idx: [] for idx in range(len(stores))}
 		
-		self.is_binary = isinstance(stores[0], datastore.abc.BinaryDatastore)
+		self.is_binary = isinstance(stores[0], datastore.datastore_abc.BinaryDatastore)
 	
 	
 	def encode(self, value: object) -> ET:
@@ -197,7 +197,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		assert not self.is_binary  # Queries are only supported for object stores
 		
 		allitems: typing.List[int] = list(range(0, total))
-		sn: datastore.abc.ObjectDatastore
+		sn: datastore.datastore_abc.ObjectDatastore
 		resultset: datastore.Cursor
 
 		for sn in self.stores:
@@ -225,7 +225,7 @@ class DatastoreTests(typing.Generic[DS, ET]):
 		if self.is_binary:
 			return  # Not supported on binary datastores
 		
-		sn: datastore.abc.ObjectDatastore
+		sn: datastore.datastore_abc.ObjectDatastore
 		value: int
 		
 		for value in range(0, self.numelems):

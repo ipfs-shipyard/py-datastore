@@ -11,7 +11,7 @@ import typing
 import trio
 
 import datastore
-import datastore.abc
+import datastore.datastore_abc
 import datastore.util
 
 from .util import exchange, rename_noreplace, statx
@@ -122,7 +122,7 @@ stat_kwargs_t = typing_TypedDict("stat_kwargs_t", {
 })
 
 
-class FileReader(datastore.abc.ReceiveStream):
+class FileReader(datastore.datastore_abc.ReceiveStream):
 	__slots__ = ("_file")
 	
 	_file: 'trio._file_io.AsyncIOWrapper'
@@ -198,7 +198,7 @@ class FileReader(datastore.abc.ReceiveStream):
 accuracy_t = typing_Literal["unknown", "initial-exact", "initial-approximate", "initial-timed-out"]
 
 
-ACCURACY_INTERAL_TO_METADATA: typing.Dict[accuracy_t, datastore.typing.accuracy_t] = {
+ACCURACY_INTERAL_TO_METADATA: typing.Dict[accuracy_t, datastore.datastore_typing.accuracy_t] = {
 	"unknown": "unknown",
 	"initial-exact": "exact",
 	"initial-approximate": "approximate",
@@ -296,7 +296,7 @@ class DummyLock:
 		return False
 
 
-class FileSystemDatastore(datastore.abc.BinaryDatastore):
+class FileSystemDatastore(datastore.datastore_abc.BinaryDatastore):
 	"""Simple flat-file datastore.
 
 	FileSystemDatastore will store objects in independent files in the host's
@@ -741,7 +741,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	# Datastore implementation
 	
 	
-	async def get(self, key: datastore.Key) -> datastore.abc.ReceiveStream:
+	async def get(self, key: datastore.Key) -> datastore.datastore_abc.ReceiveStream:
 		"""Returns the data named by key, or raises KeyError otherwise.
 		
 		It is suggested to read larger chunks of the returned stream to reduce
@@ -865,7 +865,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		await run_blocking_nointr(self._put_replace_sync, source, target)
 	
 	async def _receive_and_write(self, file: 'trio._file_io.AsyncIOWrapper',
-	                             value: datastore.abc.ReceiveStream) -> None:
+	                             value: datastore.datastore_abc.ReceiveStream) -> None:
 		chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
 		while chunk:
 			# Do bookkeeping
@@ -878,7 +878,8 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 			chunk = await value.receive_some(DEFAULT_BUFFER_SIZE)
 	
 	async def _put(self, key: datastore.Key,  # type: ignore[override]
-	               value: datastore.abc.ReceiveStream, *, create: bool, replace: bool) -> None:
+	               value: datastore.datastore_abc.ReceiveStream, *,
+	               create: bool, replace: bool) -> None:
 		"""Stores or replaces the data named by `key` with `value`
 		
 		Arguments
@@ -987,7 +988,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 	
 	
 	async def _put_new_indirect(self, prefix: datastore.Key  # type: ignore[override]
-	) -> datastore.abc.BinaryDatastore._PUT_NEW_INDIRECT_RT:
+	) -> datastore.datastore_abc.BinaryDatastore._PUT_NEW_INDIRECT_RT:
 		"""Stores data in a new subkey below *prefix*
 		
 		Arguments
@@ -1036,7 +1037,7 @@ class FileSystemDatastore(datastore.abc.BinaryDatastore):
 		
 		# Return a pretty uninspired callback function that reads data from the stream
 		# and writes it to the target file
-		async def callback(value: datastore.abc.ReceiveStream) -> None:
+		async def callback(value: datastore.datastore_abc.ReceiveStream) -> None:
 			try:
 				await self._receive_and_write(file, value)
 			except BaseException:

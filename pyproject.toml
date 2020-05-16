@@ -51,7 +51,7 @@ known_third_party = [
 skip = [
 	".tox",
 	"datastore/__init__.py",
-	"datastore/abc.py",
-	"datastore/typing.py",
+	"datastore/datastore_abc.py",
+	"datastore/datastore_typing.py",
 	"datastore/util.py"
 ]

@@ -87,7 +87,7 @@ def test_interface_check_returns_true_for_valid_serializers():
 	assert implements_serializer_interface(datastore.serializer.json.Serializer())
 	assert implements_serializer_interface(datastore.serializer.json.PrettySerializer())
 	assert implements_serializer_interface(datastore.serializer.pickle.Serializer())
-	assert implements_serializer_interface(datastore.abc.Serializer)
+	assert implements_serializer_interface(datastore.datastore_abc.Serializer)
 
 
 def test_interface_check_returns_false_for_invalid_serializers():

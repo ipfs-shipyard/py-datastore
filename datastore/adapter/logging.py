@@ -148,12 +148,12 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("logger",)
 
@@ -161,11 +161,11 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("logger",)

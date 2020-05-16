@@ -108,7 +108,7 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 		except BaseException:
 			# Do proper cancellation on errors
 			with trio.CancelScope(deadline=0):
-				if isinstance(self, datastore.abc.BinaryDatastore):
+				if isinstance(self, datastore.datastore_abc.BinaryDatastore):
 					callback(datastore.util.receive_stream_from(b""))
 				else:
 					callback(datastore.util.receive_channel_from([]))
@@ -157,12 +157,12 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -170,12 +170,12 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -217,12 +217,12 @@ class _LowercaseKeyAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, 
 
 class BinaryLowercaseKeyAdapter(
 		_LowercaseKeyAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -230,12 +230,12 @@ class BinaryLowercaseKeyAdapter(
 class ObjectLowercaseKeyAdapter(
 		typing.Generic[T_co],
 		_LowercaseKeyAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -286,12 +286,12 @@ class _NamespaceAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV]
 
 class BinaryNamespaceAdapter(
 		_NamespaceAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn", "namespace",)
 
@@ -299,12 +299,12 @@ class BinaryNamespaceAdapter(
 class ObjectNamespaceAdapter(
 		typing.Generic[T_co],
 		_NamespaceAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn", "namespace",)
 
@@ -412,12 +412,12 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 
 class BinaryNestedPathAdapter(
 		_NestedPathAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")
 
@@ -425,11 +425,11 @@ class BinaryNestedPathAdapter(
 class ObjectNestedPathAdapter(
 		typing.Generic[T_co],
 		_NestedPathAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")

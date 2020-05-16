@@ -10,14 +10,14 @@ T_co = typing.TypeVar("T_co", covariant=True)
 #
 #  * https://github.com/python/mypy/issues/7790 (Associated types)
 #  * https://github.com/python/mypy/issues/7791 (Types of generic classes)
-DS = typing.TypeVar("DS", datastore.abc.BinaryDatastore,
-                    datastore.abc.ObjectDatastore[T_co])  # type: ignore[valid-type]
-DA = typing.TypeVar("DA", datastore.abc.BinaryAdapter,
-                    datastore.abc.ObjectAdapter[T_co, T_co])  # type: ignore[valid-type]
+DS = typing.TypeVar("DS", datastore.datastore_abc.BinaryDatastore,
+                    datastore.datastore_abc.ObjectDatastore[T_co])  # type: ignore[valid-type]
+DA = typing.TypeVar("DA", datastore.datastore_abc.BinaryAdapter,
+                    datastore.datastore_abc.ObjectAdapter[T_co, T_co])  # type: ignore[valid-type]
 MD = typing.TypeVar("MD", datastore.util.StreamMetadata,
                     datastore.util.ChannelMetadata)
-RT = typing.TypeVar("RT", datastore.abc.ReceiveStream,
-                    datastore.abc.ReceiveChannel[T_co])  # type: ignore[valid-type]
+RT = typing.TypeVar("RT", datastore.datastore_abc.ReceiveStream,
+                    datastore.datastore_abc.ReceiveChannel[T_co])  # type: ignore[valid-type]
 RV = typing.TypeVar("RV", bytes, typing.List[T_co])  # type: ignore[valid-type]
 
 

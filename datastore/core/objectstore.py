@@ -143,7 +143,8 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 	@abc.abstractmethod
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
 	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
-		"""Like :meth:`put`, but always receives a :type:`datastore.abc.ReceiveChannel` compatible object
+		"""Like :meth:`put`, but always receives a :type:`datastore.datastore_abc.ReceiveChannel`
+		compatible object
 		
 		This way your datastore implementation doesn't have to do the
 		conversion from the several supported input types supported itself.
@@ -183,7 +184,8 @@ class Datastore(typing.Generic[T_co], trio.abc.AsyncResource):
 	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveChannel[T_co],
 	                   **kwargs: typing.Any) -> key_.Key:
 		"""
-		Like :meth:`put_new`, but always receives a :type:`datastore.abc.ReceiveChannel` compatible object
+		Like :meth:`put_new`, but always receives a :type:`datastore.datastore_abc.ReceiveChannel`
+		compatible object
 		
 		This way your datastore implementation doesn't have to do the
 		conversion from the several supported input types supported itself.

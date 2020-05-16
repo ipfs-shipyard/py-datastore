@@ -136,7 +136,8 @@ class Datastore(trio.abc.AsyncResource):
 	@abc.abstractmethod
 	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream, *,
 	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
-		"""Like :meth:`put`, but always receives a :type:`datastore.abc.ReceiveStream` compatible object
+		"""Like :meth:`put`, but always receives a :type:`datastore.datastore_abc.ReceiveStream`
+		compatible object
 		
 		This way your datastore implementation doesn't have to do the
 		conversion from the several supported input types supported itself.
@@ -175,7 +176,8 @@ class Datastore(trio.abc.AsyncResource):
 	
 	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveStream,
 	                   **kwargs: typing.Any) -> key_.Key:
-		"""Like :meth:`put_new`, but always receives a :type:`datastore.abc.ReceiveStream` compatible object
+		"""Like :meth:`put_new`, but always receives a :type:`datastore.datastore_abc.ReceiveStream`
+		compatible object
 		
 		This way your datastore implementation doesn't have to do the
 		conversion from the several supported input types supported itself.
@@ -185,7 +187,8 @@ class Datastore(trio.abc.AsyncResource):
 		return key
 	
 	
-	async def _put_new_indirect(self, prefix: key_.Key, **kwargs: typing.Any) -> _PUT_NEW_INDIRECT_RT:
+	async def _put_new_indirect(self, prefix: key_.Key,
+	                            **kwargs: typing.Any) -> _PUT_NEW_INDIRECT_RT:
 		"""Like :meth:`_put_new`, but returns the target key before starting to read data
 		
 		This method initially only receives the key *prefix* below which to create the target key

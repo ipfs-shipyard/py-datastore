@@ -1,7 +1,7 @@
 import pickle
 import typing
 
-import datastore.abc
+import datastore.datastore_abc
 
 __all__ = ("Serializer",)
 
@@ -11,7 +11,7 @@ T_co = typing.TypeVar("T_co", covariant=True)
 #FIXME: This stuff should support streaming data to the maximum extent possible
 
 
-class Serializer(datastore.abc.Serializer[T_co], typing.Generic[T_co]):
+class Serializer(datastore.datastore_abc.Serializer[T_co], typing.Generic[T_co]):
 	"""json wrapper serializer that gives the most compact representation possible.
 	"""
 	

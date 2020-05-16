@@ -3,8 +3,8 @@ import typing
 import trio
 
 import datastore
-import datastore.abc
 import datastore.core.util.stream
+import datastore.datastore_abc
 
 from . import _support
 from ._support import DS, MD, RT, RV, T_co
@@ -15,7 +15,8 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 @typing.no_type_check
-async def run_put_task(receive_stream: datastore.abc.ReceiveStream, store: DS, key: datastore.Key,
+async def run_put_task(receive_stream: datastore.datastore_abc.ReceiveStream,
+                       store: DS, key: datastore.Key,
                        kwargs: typing.Dict[str, typing.Any] = {}) -> None:
 	await store.put(key, receive_stream, **kwargs)
 
@@ -65,9 +66,9 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveStream,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
-		if isinstance(self, datastore.abc.BinaryDatastore):
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
-		elif isinstance(self, datastore.abc.ObjectDatastore):
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
 			assert False
@@ -91,9 +92,9 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveStream,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
-		if isinstance(self, datastore.abc.BinaryDatastore):
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
-		elif isinstance(self, datastore.abc.ObjectDatastore):
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
 			assert False
@@ -122,9 +123,9 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveStream,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
-		if isinstance(self, datastore.abc.BinaryDatastore):
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveStream(None)
-		elif isinstance(self, datastore.abc.ObjectDatastore):
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
 			result_stream = datastore.core.util.stream.TeeingReceiveChannel(None)
 		else:
 			assert False
@@ -261,12 +262,12 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("_stores",)
 
@@ -274,11 +275,11 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("_stores",)

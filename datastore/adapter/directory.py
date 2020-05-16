@@ -117,7 +117,7 @@ class ObjectDirectorySupport:
 
 class ObjectDatastore(
 		ObjectDirectorySupport,
-		datastore.abc.ObjectAdapter[T_co, typing.Union[T_co, str]],
+		datastore.datastore_abc.ObjectAdapter[T_co, typing.Union[T_co, str]],
 		typing.Generic[T_co]
 ):
 	"""Datastore that tracks directory entries, like in a filesystem.
@@ -162,7 +162,7 @@ class ObjectDatastore(
 	FORWARD_STAT     = True
 	
 	
-	async def _put(self, key: datastore.Key, value: datastore.abc.ReceiveChannel[T_co],
+	async def _put(self, key: datastore.Key, value: datastore.datastore_abc.ReceiveChannel[T_co],
 	               **kwargs: typing.Any) -> None:
 		"""Stores the object `value` named by `key`.
 		   DirectoryTreeDatastore stores a directory entry.
@@ -178,7 +178,9 @@ class ObjectDatastore(
 		await super().directory_add(dir_key, key, create=True)
 	
 	
-	async def _put_new(self, prefix: datastore.Key, value: datastore.abc.ReceiveChannel[T_co],
+	async def _put_new(self,
+	                   prefix: datastore.Key,
+	                   value: datastore.datastore_abc.ReceiveChannel[T_co],
 	                   **kwargs: typing.Any) -> datastore.Key:
 		"""Stores the object `value` named by `key`.
 		   DirectoryTreeDatastore stores a directory entry.
@@ -197,7 +199,7 @@ class ObjectDatastore(
 	
 	
 	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
-	      -> datastore.abc.ObjectAdapter._PUT_NEW_INDIRECT_RT[T_co]:
+	      -> datastore.datastore_abc.ObjectAdapter._PUT_NEW_INDIRECT_RT[T_co]:
 		"""Stores the object `value` named by `key`.
 		   DirectoryTreeDatastore stores a directory entry.
 		"""
@@ -207,7 +209,7 @@ class ObjectDatastore(
 		if key.is_top_level():
 			return key, callback
 		
-		async def callback_wrapper(value: datastore.abc.ReceiveChannel[T_co]) -> None:
+		async def callback_wrapper(value: datastore.datastore_abc.ReceiveChannel[T_co]) -> None:
 			# Add entry to directory
 			dir_key = key.parent.instance('directory')
 			await super(ObjectDatastore, self).directory_add(dir_key, key, create=True)
