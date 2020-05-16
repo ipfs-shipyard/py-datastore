@@ -19,7 +19,7 @@ async def test_sharded_simple(DatastoreTests, Adapter, DictDatastore, encode_fn)
 	stores = [s1, s2, s3, s4, s5]
 	
 	async with Adapter(stores) as sharded:
-		await DatastoreTests([sharded]).subtest_simple()
+		await DatastoreTests([sharded], test_put_new=False, test_rename=False).subtest_simple()
 
 
 

@@ -3,19 +3,18 @@ from typing import Callable, List, Tuple, Type, TypeVar, Union
 
 import datastore
 
-
 T_co = TypeVar("T_co", covariant=True)
 
 
 def make_datastore_test_params(adapter: str, subname: str = "") \
     -> Tuple[str, Tuple[
         Tuple[
-            Type[datastore.abc.BinaryAdapter],
+            Type[datastore.datastore_abc.BinaryAdapter],
             Type[Union[datastore.BinaryDictDatastore, datastore.ObjectDictDatastore]],
             Callable[[T_co], bytes]
         ],
         Tuple[
-            Type[datastore.abc.ObjectAdapter],
+            Type[datastore.datastore_abc.ObjectAdapter],
             Type[datastore.ObjectDictDatastore],
             Callable[[T_co], List[T_co]]
         ]

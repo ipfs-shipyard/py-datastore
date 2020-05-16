@@ -10,7 +10,7 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
-	"""Represents a collection of datastore shards.
+	"""Represents a collection of datastore shards
 	
 	A datastore is selected based on a sharding function.
 	Sharding functions should take a Key and return an integer.
@@ -21,6 +21,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	Also ensure the order is correct upon initialization. While this is not as
 	important for caches, it is crucial for persistent datastores.
 	"""
+	
 	__slots__ = ()
 	
 	_shardingfn: _support.FunctionProperty[typing.Callable[[datastore.Key], int]]
@@ -45,17 +46,17 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Return the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).get(key)  # type: ignore[return-value] # noqa: F723
+		return await self.get_sharded_datastore(key).get(key)  # type: ignore[return-value]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Return the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value] # noqa: F723, E501
+		return await self.get_sharded_datastore(key).get_all(key)  # type: ignore[return-value]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		"""Stores the object to the corresponding datastore."""
-		await self.get_sharded_datastore(key).put(key, value)  # type: ignore[arg-type] # noqa: F821
+		await self.get_sharded_datastore(key).put(key, value, **kwargs)
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
@@ -69,8 +70,30 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
-		"""Return the metadata of the object named by key from the corresponding datastore."""
-		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value] # noqa: F723
+		"""Returns the metadata of the object named by key from the corresponding datastore"""
+		return await self.get_sharded_datastore(key).stat(key)  # type: ignore[return-value]
+	
+	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore corresponding to `selector` or all children
+		
+		Arguments
+		---------
+		selector
+			Key that is used to look up which child datastore should be queried
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in (one of) the child datastore(s)
+		"""
+		if selector is not None:
+			return self.get_sharded_datastore(selector).datastore_stats(selector, _seen=_seen)
+		return super().datastore_stats(_seen=_seen)
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
@@ -80,7 +103,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		return cursor
 	
 	
-	def _shard_query_generator(self, query):
+	def _shard_query_generator(self, query):  # type: ignore  #FIXME: broken
 		"""A generator that queries each shard in sequence."""
 		shard_query = query.copy()
 		
@@ -107,12 +130,12 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("_shardingfn", "_stores")
 
@@ -120,11 +143,11 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("_shardingfn", "_stores")

@@ -1,6 +1,7 @@
 import pytest
 import trio.testing
 
+import datastore
 from datastore import (BinaryDictDatastore, BinaryNullDatastore, Key,
                        ObjectDictDatastore, ObjectNullDatastore, Query)
 
@@ -15,7 +16,7 @@ async def test_null(NullDatastore):
 			v = str(c).encode()
 		else:
 			v = [c]
-		k = Key(c)
+		k = Key(str(c))
 		assert not await s.contains(k)
 		with pytest.raises(KeyError):
 			await s.get(k)
@@ -40,3 +41,27 @@ async def test_dictionary(DatastoreTests, DictDatastore):
 	stores = [s1, s2, s3]
 	
 	await DatastoreTests(stores).subtest_simple()
+
+
+@trio.testing.trio_test
+async def test_dictionary_size():
+	ds = datastore.BinaryDictDatastore()
+	assert ds.datastore_stats().size == 0
+	assert ds.datastore_stats().size_accuracy == "exact"
+	
+	await ds.put(datastore.Key("/bla"), b"abcdef")
+	assert ds.datastore_stats().size == 6
+	
+	await ds.put(datastore.Key("/bla"), b"abc")
+	assert ds.datastore_stats().size == 3
+	
+	await ds.put(datastore.Key("/blab"), b"abcdef")
+	assert ds.datastore_stats().size == 9
+	assert ds.datastore_stats().size_accuracy == "exact"
+	
+	await ds.delete(datastore.Key("/bla"))
+	assert ds.datastore_stats().size == 6
+	
+	await ds.delete(datastore.Key("/blab"))
+	assert ds.datastore_stats().size == 0
+	assert ds.datastore_stats().size_accuracy == "exact"

@@ -3,8 +3,8 @@ import typing
 import trio
 
 import datastore
-import datastore.abc
 import datastore.core.util.stream
+import datastore.datastore_abc
 
 from . import _support
 from ._support import DS, MD, RT, RV, T_co
@@ -15,8 +15,10 @@ __all__ = ("BinaryAdapter", "ObjectAdapter")
 
 
 @typing.no_type_check
-async def run_put_task(receive_stream: trio.abc.ReceiveStream, store: DS, key: datastore.Key):
-	await store.put(key, receive_stream)
+async def run_put_task(receive_stream: datastore.datastore_abc.ReceiveStream,
+                       store: DS, key: datastore.Key,
+                       kwargs: typing.Dict[str, typing.Any] = {}) -> None:
+	await store.put(key, receive_stream, **kwargs)
 
 
 class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT, RV]):
@@ -50,7 +52,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				value_: RT = await store.get(key)  # type: ignore[assignment] # noqa: F821
+				value_: RT = await store.get(key)  # type: ignore[assignment]
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
@@ -64,66 +66,125 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			datastore.core.util.stream.TeeingReceiveStream,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
-		if isinstance(self, datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			assert False
 		
 		for store2 in stores:
 			if store is store2:
 				break
 			result_stream.start_task_soon(run_put_task, store2, key)
 		
-		return result_stream  # type: ignore[return-value] # noqa: F723
+		return result_stream
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Return the object named by key. Checks each datastore in order."""
-		return await (await self.get(key)).collect()  # type: ignore[return-value] # noqa: F723
+		return await (await self.get(key)).collect()  # type: ignore[return-value]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
 		"""Stores the object in all underlying datastores."""
 		result_stream: typing.Union[
 			datastore.core.util.stream.TeeingReceiveStream,
 			datastore.core.util.stream.TeeingReceiveChannel[T_co]
 		]
-		if isinstance(self, datastore.abc.BinaryDatastore):
-			result_stream = datastore.core.util.stream.TeeingReceiveStream(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(value)
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(value)
 		else:
-			result_stream = datastore.core.util.stream.TeeingReceiveChannel(
-				value  # type: ignore[arg-type] # noqa: F821
-			)
+			assert False
 		
-		for store in self._stores:
-			if store is self._stores[-1]:
-				break  # Last store drives this `TeeingReceiveStream`
-			result_stream.start_task_soon(run_put_task, store, key)
-		await self._stores[-1].put(key, result_stream)
+		try:
+			for store in self._stores:
+				if store is self._stores[-1]:
+					break  # Last store drives this `TeeingReceiveStream`
+				result_stream.start_task_soon(run_put_task, store, key, kwargs)
+			await self._stores[-1]._put(key, result_stream, **kwargs)  # type: ignore[arg-type]
+		except BaseException:
+			# Ensure the other tasks are immediately canceled if the final
+			# store's put raises an exception
+			#
+			# Without this the nursery and its attached tasks will stay open
+			# and cause an undecipherable “the init task should be the last
+			# task to exit” error on loop exit.
+			await result_stream.aclose()
+			raise
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
+	      -> typing.Tuple[datastore.Key, typing.Callable[[RT], typing.Awaitable[None]]]:
+		"""Stores the object in all underlying datastores."""
+		result_stream: typing.Union[
+			datastore.core.util.stream.TeeingReceiveStream,
+			datastore.core.util.stream.TeeingReceiveChannel[T_co]
+		]
+		if isinstance(self, datastore.datastore_abc.BinaryDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveStream(None)
+		elif isinstance(self, datastore.datastore_abc.ObjectDatastore):
+			result_stream = datastore.core.util.stream.TeeingReceiveChannel(None)
+		else:
+			assert False
+		
+		kwargs2 = kwargs.copy()
+		kwargs2["create"]  = True
+		kwargs2["replace"] = False
+		
+		try:
+			# Call `_put_new_indirect` to determine the key to create up-front
+			key, callback = await self._stores[-1]._put_new_indirect(prefix, **kwargs)
+			
+			try:
+				# Do a regular `put` with the received key
+				for store in self._stores:
+					if store is self._stores[-1]:
+						break  # Last store drives this `TeeingReceiveStream`
+					result_stream.start_task_soon(run_put_task, store, key, kwargs2)
+				
+				async def callback_wrapper(value: RT) -> None:  # type: ignore[return]  # mypy bug
+					result_stream.source = value
+					await callback(result_stream)  # type: ignore[arg-type]
+				
+				return key, callback_wrapper
+			except BaseException:
+				# Propage a cancellation to the final datastore to release any resources
+				# it may hold in the expectation of being called “soon”
+				with trio.CancelScope(deadline=0):
+					await callback(result_stream)  # type: ignore[arg-type]
+				raise
+		except BaseException:
+			# Ensure the other tasks are immediately canceled if the final
+			# store's put raises an exception
+			#
+			# Without this the nursery and its attached tasks will stay open
+			# and cause an undecipherable “the init task should be the last
+			# task to exit” error on loop exit.
+			await result_stream.aclose()
+			raise
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object from all underlying datastores."""
 		error_count = 0
 
-		async def count_key_errors(coroutine):
+		async def count_key_errors(  # type: ignore[return]  # mypy bug
+				store: DS, key: datastore.Key
+		) -> None:
 			nonlocal error_count
 			try:
-				await coroutine
+				await store.delete(key)
 			except KeyError:
 				error_count += 1
 		
 		async with trio.open_nursery() as nursery:
 			for store in self._stores:
-				nursery.start_soon(count_key_errors, store.delete(key))
+				nursery.start_soon(count_key_errors, store, key)
 		
-		# Raise exception if non of the subordinated datastores contained this
+		# Raise exception if none of the subordinated datastores contained this
 		# key (and hence it wasn't actually available in the first place)
 		if error_count >= len(self._stores):
 			raise KeyError(key)
@@ -135,7 +196,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		the only) complete record of all objects.
 		"""
 		# queries hit the last (most complete) datastore
-		return await self._stores[-1].query(query)  # type: ignore[attr-defined] # noqa: F821
+		return await self._stores[-1].query(query)  # type: ignore[attr-defined, no-any-return]
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
@@ -144,6 +205,30 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 			if await store.contains(key):
 				return True
 		return False
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *key1* to *key2*"""
+		renamed: typing.List[DS] = []
+		
+		async def do_rename(store: DS) -> None:  # type: ignore[return]  # mypy bug
+			await store.rename(key1, key2, replace=replace)
+			renamed.append(store)
+		
+		try:
+			async with trio.open_nursery() as nursery:
+				for store in self._stores:
+					nursery.start_soon(do_rename, store)
+		except BaseException:
+			# Try to undo our changes
+			with trio.CancelScope(shield=True):
+				for store in reversed(renamed):
+					try:
+						await store.rename(key2, key1, replace=False)
+					except BaseException:
+						pass  # Swallow all exceptions
+			raise
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
@@ -158,7 +243,7 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 		stores: typing.List[DS] = self._stores.copy()
 		for store in stores:
 			try:
-				metadata_: MD = await store.stat(key)  # type: ignore[assignment] # noqa: F821
+				metadata_: MD = await store.stat(key)  # type: ignore[assignment]
 			except KeyError as exc:
 				exceptions.append(exc)
 			else:
@@ -177,12 +262,12 @@ class _Adapter(_support.DatastoreCollectionMixin[DS], typing.Generic[DS, MD, RT,
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("_stores",)
 
@@ -190,11 +275,11 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("_stores",)

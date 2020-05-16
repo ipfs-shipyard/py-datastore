@@ -1,6 +1,7 @@
 import abc
 import collections.abc
 import typing
+import uuid
 
 import trio
 
@@ -9,6 +10,7 @@ from . import query as query_
 
 
 class util:  # noqa
+	from .util import decorator
 	from .util import metadata
 	from .util import stream
 
@@ -16,7 +18,7 @@ class util:  # noqa
 def is_valid_value_type(value: util.stream.ArbitraryReceiveStream) -> bool:
 	"""Checks that `value` is of the right type for `Datastore.put`
 	
-	It's just too easy to acidentally pass in the wrong type without this check.
+	It's just too easy to accidentally pass in the wrong type without this check.
 	Unfortunately this cannot check whether iterators return the correct types,
 	so the utility of this function unfortunately is limited to some extent.
 	"""
@@ -54,6 +56,19 @@ class Datastore(trio.abc.AsyncResource):
 	METADATA_T: type
 	RECEIVE_T:  type
 	
+	_DS = typing.TypeVar("_DS", bound="Datastore")
+	
+	_PUT_NEW_INDIRECT_RT = typing.Tuple[
+		key_.Key,
+		typing.Callable[[util.stream.ReceiveStream], typing.Awaitable[None]]
+	]
+	
+	
+	@classmethod
+	@util.decorator.awaitable_to_context_manager
+	async def create(cls: typing.Type[_DS], *args: typing.Any, **kwargs: typing.Any) -> _DS:
+		return cls(*args, **kwargs)  # type: ignore[call-arg]
+	
 	# Main API. Datastore implementations MUST implement these methods.
 	
 	
@@ -80,10 +95,15 @@ class Datastore(trio.abc.AsyncResource):
 			An internal error occurred
 		"""
 		pass
-
-
-	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveStream) -> None:
-		"""Stores or replaces the data named by `key` with `value`
+	
+	
+	async def put(self, key: key_.Key, value: util.stream.ArbitraryReceiveStream, *,
+	              create: bool = True, replace: bool = True, **kwargs: typing.Any) -> None:
+		"""Stores or replaces the data in *value* at name *key*
+		
+		This operation is similar to opening a regular file on a filesystem for
+		writing or doing an ``INSERT INTO OR UPDATE`` style SQL operation with a
+		primary key (or parts thereof depending on the provided flags).
 		
 		Arguments
 		---------
@@ -91,24 +111,93 @@ class Datastore(trio.abc.AsyncResource):
 			Key naming the binary data slot to store at
 		value
 			A synchronous or asynchronous bytes or iterable of bytes object
-			yielding the data to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		
 		Raises
 		------
 		RuntimeError
 			An internal error occurred
+		RuntimeError
+			Arguments *create* and *replace* cannot both be ``False``
+		NotImplementedError
+			This datastore does not support the argument *create* or *replace* being ``False``,
+			but it is not ``True``
 		"""
 		assert is_valid_value_type(value)
-		await self._put(key, util.stream.receive_stream_from(value))
+		if not create and not replace:
+			raise RuntimeError("Arguments create and replace cannot both be False")
+		await self._put(key, util.stream.receive_stream_from(value),
+		                create=create, replace=replace, **kwargs)
 	
-
+	
 	@abc.abstractmethod
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
-		"""Like :meth:`put`, but always receives a `datastore.util.ReceiveStream`
-		   compatible object, so that your datastore implementation doesn't
-		   have to do any conversion anymore
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream, *,
+	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
+		"""Like :meth:`put`, but always receives a :type:`datastore.datastore_abc.ReceiveStream`
+		compatible object
+		
+		This way your datastore implementation doesn't have to do the
+		conversion from the several supported input types supported itself.
 		"""
 		pass
+	
+	
+	async def put_new(self, prefix: key_.Key, value: util.stream.ArbitraryReceiveStream,
+	                  **kwargs: typing.Any) -> key_.Key:
+		"""Create a new data key below *prefix* with the given value
+		
+		This operation is similar to creating a temporary file below some
+		directory on a filesystem or doing an ``INSERT INTO`` SQL operation.
+		
+		Arguments
+		---------
+		prefix
+			The key prefix under which to create the target key
+		value
+			A synchronous or asynchronous bytes or iterable of bytes object
+		
+		Returns
+		-------
+		The created key
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred
+		NotImplementedError
+			This datastore does not support this operation
+		"""
+		assert is_valid_value_type(value)
+		return await self._put_new(prefix, util.stream.receive_stream_from(value), **kwargs)
+	
+	
+	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveStream,
+	                   **kwargs: typing.Any) -> key_.Key:
+		"""Like :meth:`put_new`, but always receives a :type:`datastore.datastore_abc.ReceiveStream`
+		compatible object
+		
+		This way your datastore implementation doesn't have to do the
+		conversion from the several supported input types supported itself.
+		"""
+		key, callable = await self._put_new_indirect(prefix, **kwargs)
+		await callable(value)
+		return key
+	
+	
+	async def _put_new_indirect(self, prefix: key_.Key,
+	                            **kwargs: typing.Any) -> _PUT_NEW_INDIRECT_RT:
+		"""Like :meth:`_put_new`, but returns the target key before starting to read data
+		
+		This method initially only receives the key *prefix* below which to create the target key
+		and should come up (possibly using asynchronous code) with the actual key that will be
+		created and a callback function that receives the actual data and writes it to the
+		backend. Datastores should strive to implement this method rather than just :func:`_put_new`
+		to allow for compatiblity with the tiered datastore.
+		"""
+		raise NotImplementedError()
 	
 	
 	@abc.abstractmethod
@@ -170,6 +259,34 @@ class Datastore(trio.abc.AsyncResource):
 		return await (await self.get(key)).collect()
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
+		replace
+			Should an existing key at name *key2* be replaced?
+		
+		Raises
+		------
+		KeyError
+			There was no data by name *key1* in the datastore
+		KeyError
+			There was already some data at name *key2* in the datastore,
+			but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred
+		NotImplementedError
+			This datastore does not support this operation
+		"""
+		raise NotImplementedError()
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
 		"""Returns any metadata associated with the data stream named by `key`
 		or raises `KeyError` otherwise
@@ -195,12 +312,44 @@ class Datastore(trio.abc.AsyncResource):
 			)
 	
 	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of this datastore
+		
+		Unless overwritten this will not return any interesting value. In general,
+		datastore backing implementations should try to at least expose a proper
+		size measure if that is possible without any major accounting overhead.
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			For datastore backends this will generally be ignored.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			For datastore backends this must be silently ignored.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred
+		"""
+		# The following should NOT be `util.metadata.DatastoreMetadata.IGNORE` as
+		# that value would indicate that this datastore should be ignored during
+		# size estimation rather than not implementing size estimation
+		return util.metadata.DatastoreMetadata()
+	
+	
 	async def aclose(self) -> None:
 		"""Closes this any resources held by this datastore, possibly blocking
 		
 		Carefully read the documentation of :class:`trio.abc.AsyncResource`,
-		particularily with regards to concellation and forceful closings, when
-		implementating this.
+		particularly with regards to cancellation and forceful closings, when
+		implementing this.
 		"""
 		pass
 
@@ -215,7 +364,8 @@ class NullDatastore(Datastore):
 		"""Unconditionally raise `KeyError`"""
 		raise KeyError(key)
 
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
+	async def _put(self, key: key_.Key,  # type: ignore[override]
+	               value: util.stream.ReceiveStream, *, create: bool, replace: bool) -> None:
 		"""Do nothing with `key` and ignore the `value`"""
 		pass
 
@@ -225,7 +375,7 @@ class NullDatastore(Datastore):
 
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""This won't ever match anything"""
-		return query([])
+		return query([])  # type: ignore[no-any-return]
 
 
 
@@ -236,13 +386,14 @@ class DictDatastore(Datastore):
 
 	_items: typing.Dict[str, typing.Dict[key_.Key, bytes]]
 
-	def __init__(self):
+	def __init__(self) -> None:
 		self._items = {}
 	
 	
-	def _collection(self, key: key_.Key) -> typing.Dict[key_.Key, bytes]:
+	def _collection(self, key: key_.Key, parent: bool = True) \
+	    -> typing.Dict[key_.Key, bytes]:
 		"""Returns the namespace collection for `key`."""
-		collection = str(key.path)
+		collection = str(key.path if parent else key)
 		if collection not in self._items:
 			self._items[collection] = dict()
 		return self._items[collection]
@@ -274,7 +425,8 @@ class DictDatastore(Datastore):
 		return self._collection(key)[key]
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
+	async def _put(self, key: key_.Key,  # type: ignore[override]
+	               value: util.stream.ReceiveStream, *, create: bool, replace: bool) -> None:
 		"""Stores the object `value` named by `key`.
 		
 		Stores the object in the collection corresponding to ``key.path``.
@@ -285,8 +437,49 @@ class DictDatastore(Datastore):
 			Key naming `value`
 		value
 			The object to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		"""
-		self._collection(key)[key] = await value.collect()
+		# This isn't thread-safe, but that's OK as we don't actually
+		# guarantee that, rather we are only safe with regards to trio's
+		# task scheduling
+		collection = self._collection(key)
+		if not create and key not in collection:
+			raise KeyError(key)
+		if not replace and key in collection:
+			raise KeyError(key)
+		collection[key] = await value.collect()
+	
+	
+	async def _put_new_indirect(self, prefix: key_.Key,  # type: ignore[override]
+	) -> Datastore._PUT_NEW_INDIRECT_RT:
+		"""Stores the data passed to the returned callback in a new key below *prefix*
+		
+		Stores the data in the collection corresponding to ``key``.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to store the given data
+		"""
+		# This isn't thread-safe, but that's OK as we don't actually
+		# guarantee that, rather we are only safe with regards to trio's
+		# task scheduling
+		collection = self._collection(prefix, parent=False)
+		while True:
+			key = prefix.child(str(uuid.uuid4()))
+			if key not in collection:
+				break
+		
+		# Reserve key
+		collection[key] = b""
+		
+		# Receive and write data later
+		async def callback(value: util.stream.ReceiveStream) -> None:
+			collection[key] = await value.collect()
+		return key, callback
 	
 	
 	async def delete(self, key: key_.Key) -> None:
@@ -319,6 +512,32 @@ class DictDatastore(Datastore):
 		return key in self._collection(key)
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
+		replace
+			Should an existing key at name *key2* be replaced?
+		"""
+		if key1 == key2:
+			return
+		
+		collection1 = self._collection(key1)
+		collection2 = self._collection(key2)
+		if key1 not in collection1:
+			raise KeyError(key1)
+		if not replace and key2 in collection2:
+			raise KeyError(key2)
+		collection2[key2] = collection1[key1]
+		del collection1[key1]
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
 		"""Returns the length of the byte sequence named by `key` if it exists.
 		
@@ -330,6 +549,19 @@ class DictDatastore(Datastore):
 			Key naming a byte sequence
 		"""
 		return util.metadata.StreamMetadata(size=len(self._collection(key)[key]))
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns the number of bytes stored in this datastore
+		
+		Arguments
+		---------
+		selector
+			Ignored by backing datastores
+		"""
+		size = sum(map(lambda c: sum(map(len, c.values())), self._items.values()))
+		return util.metadata.DatastoreMetadata(size=size, size_accuracy="exact")
 	
 	
 	def __len__(self) -> int:
@@ -353,9 +585,13 @@ class Adapter(Datastore):
 	"""
 	__slots__ = ("child_datastore",)
 	
-	FORWARD_CONTAINS: bool = False
-	FORWARD_GET_ALL:  bool = False
-	FORWARD_STAT:     bool = False
+	FORWARD_CONTAINS:  bool = False
+	FORWARD_GET_ALL:   bool = False
+	FORWARD_PUT_NEW:   bool = False  # Not always true
+	FORWARD_PUT_NEW_D: typing.Optional[bool] = None  # Defaults to the value of `FORWARD_PUT_NEW`
+	FORWARD_PUT_NEW_I: typing.Optional[bool] = None  # Defaults to the value of `FORWARD_PUT_NEW`
+	FORWARD_RENAME:    bool = False
+	FORWARD_STAT:      bool = False
 	
 	child_datastore: Datastore
 	
@@ -388,24 +624,85 @@ class Adapter(Datastore):
 		return await self.child_datastore.get(key)
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream) -> None:
-		"""Stores the data from the binary stream `value` at name `key`.
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveStream, *,
+	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
+		"""Stores the data from the binary stream *value* at name *key*.
 		
-		Default shim implementation simply calls ``child_datastore.put(key, value)``
+		Default shim implementation simply calls ``child_datastore._put(key, value)``
 		Override to provide different functionality, for example::
 		
 			async def _put(self, key, value):
 				value = json.dumps(await value.collect())
-				await self.child_datastore.put(key, value)
+				await self.child_datastore._put(key, value)
 		
 		Arguments
 		---------
 		key
-			Key naming `value`.
+			Key naming `value`
 		value
-			The data to store.
+			The data to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		"""
-		await self.child_datastore.put(key, value)
+		await self.child_datastore._put(key, value, create=create, replace=replace, **kwargs)
+	
+	
+	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveStream,
+	                   **kwargs: typing.Any) -> key_.Key:
+		"""Stores the data from the binary stream *value* below *prefix*
+		
+		Default shim implementation simply returns ``child_datastore._put_new(prefix, value)``
+		if ``FORWARD_PUT_NEW`` or ``FORWARD_PUT_NEW_D`` are `True`, a value based on
+		:meth:`_put_new_indirect` otherwise.
+		
+		In general prefer overriding :meth:`_put_new_indirect` rather than this method to
+		also support tiered datastore. Note however that both methods will have to be overriden
+		to fully support datastores that only support `_put_new`, but not `_put_new_indirect`,
+		on the one hand and ones that support both methods on the other.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to store *value*
+		value
+			The data to store
+		"""
+		if (self.FORWARD_PUT_NEW_D is not None and self.FORWARD_PUT_NEW_D) \
+		   or (self.FORWARD_PUT_NEW_D is None and self.FORWARD_PUT_NEW):
+			return await self.child_datastore._put_new(prefix, value, **kwargs)
+		else:
+			return await Datastore._put_new(self, prefix, value, **kwargs)  # May raise
+	
+	
+	async def _put_new_indirect(self, prefix: key_.Key, **kwargs: typing.Any) \
+	      -> Datastore._PUT_NEW_INDIRECT_RT:
+		"""Stores the data from the binary stream passed to the returned callback below *prefix*
+		
+		Default shim implementation simply returns ``child_datastore._put_new_indirect(prefix)``
+		if ``FORWARD_PUT_NEW`` or ``FORWARD_PUT_NEW_I`` are `True`, raises `NotImplementedError`
+		otherwise.
+		
+		Override to provide different functionality, for example::
+		
+			async def _put_new_indirect(self, prefix):
+				key, callback = await self.child_datastore._put_new_indirect(prefix)
+				async def callback_wrapper(value):
+					value = json.dumps(await value.collect())
+					await callback(value)
+				return key, callback_wrapper
+		
+		Arguments
+		---------
+		prefix
+			Key below which to store the given data
+		"""
+		if (self.FORWARD_PUT_NEW_I is not None and self.FORWARD_PUT_NEW_I) \
+		   or (self.FORWARD_PUT_NEW_I is None and self.FORWARD_PUT_NEW):
+			return await self.child_datastore._put_new_indirect(prefix, **kwargs)
+		else:
+			return await Datastore._put_new_indirect(self, prefix, **kwargs)  # Will raise
 	
 	
 	async def delete(self, key: key_.Key) -> None:
@@ -465,6 +762,37 @@ class Adapter(Datastore):
 			return await Datastore.contains(self, key)
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the data at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
+		replace
+			Should an existing key at name *key2* be replaced?
+		
+		Raises
+		------
+		KeyError
+			Key *key1* did not exist in the child datastore
+		KeyError
+			Key *key2* already exists in the child datastore, but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred in the child datastore
+		NotImplementedError
+			``FORWARD_RENAME`` is not ``True`` or the child datastore does not
+			support this operation
+		"""
+		if self.FORWARD_RENAME:
+			return await self.child_datastore.rename(key1, key2, replace=replace)
+		else:
+			return await Datastore.rename(self, key1, key2, replace=replace)  # Will raise
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.StreamMetadata:
 		"""Returns the metadata of the stream named by `key` if it exists
 		
@@ -480,6 +808,39 @@ class Adapter(Datastore):
 			return await self.child_datastore.stat(key)
 		else:
 			return await Datastore.stat(self, key)
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of the child datastore
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			This is required to ensure that no backing datastore is counted more
+			than once if `selector` is ``None``.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in the child datastore
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		if id(self.child_datastore) in _seen:
+			return util.metadata.DatastoreMetadata.IGNORE
+		
+		_seen.add(id(self.child_datastore))
+		return self.child_datastore.datastore_stats(selector, _seen=_seen)
 	
 	
 	async def aclose(self) -> None:

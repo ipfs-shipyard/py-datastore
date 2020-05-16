@@ -1,5 +1,7 @@
 import typing
 
+import trio
+
 import datastore
 
 from . import _support
@@ -49,62 +51,118 @@ class _Adapter(typing.Generic[DS, MD, RT, RV]):
 	
 	FORWARD_CONTAINS = True
 	FORWARD_GET_ALL  = True
+	FORWARD_PUT_NEW  = False  # Only true if we can also transform the returned name back
+	FORWARD_RENAME   = True
 	FORWARD_STAT     = True
 	
 	key_transform_fn: _support.FunctionProperty[KEY_TRANSFORM_T]
 	
 	
-	def __init__(self, *args, key_transform: KEY_TRANSFORM_T = (lambda k: k), **kwargs):
+	def __init__(self, *args: typing.Any, key_transform: KEY_TRANSFORM_T = (lambda k: k),
+	             **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with `keytransform` function."""
 		self.key_transform_fn = key_transform
-		super().__init__(*args, **kwargs)  # type: ignore[call-arg] # noqa: F821
+		super().__init__(*args, **kwargs)  # type: ignore[call-arg]
+	
+	
+	def _transform_key(self, key: datastore.Key) -> datastore.Key:
+		return self.key_transform_fn(key)
+	
+	def _untransform_key(self, key: datastore.Key) -> datastore.Key:
+		raise NotImplementedError()
 	
 	
 	async def get(self, key: datastore.Key) -> RT:
 		"""Returns the object named by keytransform(key)."""
-		return await super().get(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().get(self._transform_key(key))  # type: ignore[misc, no-any-return]
 	
 	
 	async def get_all(self, key: datastore.Key) -> RV:
 		"""Returns the object named by keytransform(key)."""
-		return await super().get_all(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().get_all(self._transform_key(key))  # type: ignore[misc, no-any-return]
 	
 	
-	async def _put(self, key: datastore.Key, value: RT) -> None:
-		"""Stores the object names by keytransform(key)."""
-		await super()._put(self.key_transform_fn(key), value)  # type: ignore[misc] # noqa: F821
+	async def _put(self, key: datastore.Key, value: RT, **kwargs: typing.Any) -> None:
+		"""Stores the object named by keytransform(key)."""
+		await super()._put(  # type: ignore[misc, no-any-return]
+			self._transform_key(key), value, **kwargs
+		)
+	
+	
+	async def _put_new(self, prefix: datastore.Key, value: RT, **kwargs: typing.Any) -> datastore.Key:
+		"""Stores the given *value* below keytransfrom(prefix)."""
+		return self._untransform_key(await super()._put_new(  # type: ignore[misc, no-any-return]
+			self._transform_key(prefix), value, **kwargs
+		))
+	
+	
+	async def _put_new_indirect(self, prefix: datastore.Key, **kwargs: typing.Any) \
+	      -> typing.Tuple[datastore.Key, typing.Callable[[RT], typing.Awaitable[None]]]:
+		"""Stores the given *value* below keytransfrom(prefix)."""
+		key, callback = await super()._put_new_indirect(  # type: ignore[misc, no-any-return]
+			self._transform_key(prefix), **kwargs
+		)
+		try:
+			# Reverse key transformation on result
+			key = self._untransform_key(key)
+		except BaseException:
+			# Do proper cancellation on errors
+			with trio.CancelScope(deadline=0):
+				if isinstance(self, datastore.datastore_abc.BinaryDatastore):
+					callback(datastore.util.receive_stream_from(b""))
+				else:
+					callback(datastore.util.receive_channel_from([]))
+			raise
+		
+		return key, callback
 	
 	
 	async def delete(self, key: datastore.Key) -> None:
 		"""Removes the object named by keytransform(key)."""
-		await super().delete(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		await super().delete(self._transform_key(key))  # type: ignore[misc]
 	
 	
 	async def contains(self, key: datastore.Key) -> bool:
 		"""Returns whether the object named by key is in this datastore."""
-		return await super().contains(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().contains(self._transform_key(key))  # type: ignore[misc, no-any-return]
+	
+	
+	async def rename(self, key1: datastore.Key, key2: datastore.Key, *,
+	                 replace: bool = True) -> None:
+		"""Renames item *keytransform(key1)* to *keytransform(key2)*"""
+		await super().rename(self._transform_key(key1),  # type: ignore[misc]
+		                     self._transform_key(key2), replace=replace)
 	
 	
 	async def stat(self, key: datastore.Key) -> MD:
 		"""Returns the metadata of the object named by keytransform(key)."""
-		return await super().stat(self.key_transform_fn(key))  # type: ignore[misc] # noqa: F821
+		return await super().stat(self._transform_key(key))  # type: ignore[misc, no-any-return]
+	
+	
+	def datastore_stats(self, selector: datastore.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> datastore.util.DatastoreMetadata:
+		"""Returns metadata of the child datastore"""
+		return super().datastore_stats(  # type: ignore[misc, no-any-return]
+			self._transform_key(selector) if selector is not None else None,
+			_seen=_seen
+		)
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
 		"""Returns a sequence of objects matching criteria expressed in `query`"""
 		query = query.copy()
-		query.key = self.key_transform_fn(query.key)
-		return await super().query(query)  # type: ignore[misc] # noqa: F821
+		query.key = self._transform_key(query.key)
+		return await super().query(query)  # type: ignore[misc, no-any-return]
 
 
 class BinaryAdapter(
 		_Adapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -112,12 +170,12 @@ class BinaryAdapter(
 class ObjectAdapter(
 		typing.Generic[T_co],
 		_Adapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -147,24 +205,24 @@ class _LowercaseKeyAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, 
 	"""
 	__slots__ = ()
 	
-	def __init__(self, *args, **kwargs):
+	def __init__(self, *args: typing.Any, **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with `key_transform` function."""
-		super().__init__(*args, key_transform=self.lowercase_key, **kwargs)
+		super().__init__(*args, **kwargs)
 	
 	@classmethod
-	def lowercase_key(cls, key: datastore.Key) -> datastore.Key:
+	def _transform_key(cls, key: datastore.Key) -> datastore.Key:
 		"""Returns a lowercased `key`."""
 		return datastore.Key(str(key).lower())
 
 
 class BinaryLowercaseKeyAdapter(
 		_LowercaseKeyAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -172,12 +230,12 @@ class BinaryLowercaseKeyAdapter(
 class ObjectLowercaseKeyAdapter(
 		typing.Generic[T_co],
 		_LowercaseKeyAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn",)
 
@@ -207,26 +265,33 @@ class _NamespaceAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV]
 	"""
 	__slots__ = ()
 	
+	FORWARD_PUT_NEW = True
+	
 	namespace: datastore.Key
-
-	def __init__(self, namespace: typing.Union[str, datastore.Key], *args, **kwargs):
+	
+	def __init__(self, namespace: typing.Union[str, datastore.Key],
+	             *args: typing.Any, **kwargs: typing.Any):
 		"""Initializes NamespaceDatastore with `key` namespace."""
 		self.namespace = datastore.Key(namespace)
-		super().__init__(*args, key_transform = self.namespace_key, **kwargs)
+		super().__init__(*args, **kwargs)
 	
-	def namespace_key(self, key: datastore.Key) -> datastore.Key:
+	def _transform_key(self, key: datastore.Key) -> datastore.Key:
 		"""Returns a namespaced `key`: namespace.child(key)."""
 		return self.namespace.child(key)
+	
+	def _untransform_key(self, key: datastore.Key) -> datastore.Key:
+		"""Returns `key` with the namespace stripped"""
+		return datastore.Key(key.list[len(self.namespace):])
 
 
 class BinaryNamespaceAdapter(
 		_NamespaceAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn", "namespace",)
 
@@ -234,12 +299,12 @@ class BinaryNamespaceAdapter(
 class ObjectNamespaceAdapter(
 		typing.Generic[T_co],
 		_NamespaceAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn", "namespace",)
 
@@ -280,11 +345,11 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 		return key.name
 	
 	
-	def __init__(self, *args,
+	def __init__(self, *args: typing.Any,
 	             depth: int = None,
 	             length: int = None,
 	             key_fn: typing.Callable[[datastore.Key], str] = None,
-	             **kwargs):
+	             **kwargs: typing.Any):
 		"""Initializes KeyTransformDatastore with keytransform function.
 
 		Arguments
@@ -302,7 +367,7 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 		self.nest_length = length if length is not None else self._default_length
 		self.nest_keyfn  = key_fn if key_fn is not None else self._default_keyfn
 
-		super().__init__(*args, key_transform=self.nest_key, **kwargs)
+		super().__init__(*args, **kwargs)
 	
 	
 	async def query(self, query: datastore.Query) -> datastore.Cursor:
@@ -310,7 +375,7 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 		raise NotImplementedError()
 	
 	
-	def nest_key(self, key: datastore.Key) -> datastore.Key:
+	def _transform_key(self, key: datastore.Key) -> datastore.Key:
 		"""Returns a nested `key`."""
 		
 		nest = self.nest_keyfn(key)
@@ -347,12 +412,12 @@ class _NestedPathAdapter(_Adapter[DS, MD, RT, RV], typing.Generic[DS, MD, RT, RV
 
 class BinaryNestedPathAdapter(
 		_NestedPathAdapter[
-			datastore.abc.BinaryDatastore,
+			datastore.datastore_abc.BinaryDatastore,
 			datastore.util.StreamMetadata,
-			datastore.abc.ReceiveStream,
+			datastore.datastore_abc.ReceiveStream,
 			bytes
 		],
-		datastore.abc.BinaryAdapter
+		datastore.datastore_abc.BinaryAdapter
 ):
 	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")
 
@@ -360,11 +425,11 @@ class BinaryNestedPathAdapter(
 class ObjectNestedPathAdapter(
 		typing.Generic[T_co],
 		_NestedPathAdapter[
-			datastore.abc.ObjectDatastore[T_co],
+			datastore.datastore_abc.ObjectDatastore[T_co],
 			datastore.util.ChannelMetadata,
-			datastore.abc.ReceiveChannel[T_co],
+			datastore.datastore_abc.ReceiveChannel[T_co],
 			typing.List[T_co]
 		],
-		datastore.abc.ObjectAdapter[T_co, T_co]
+		datastore.datastore_abc.ObjectAdapter[T_co, T_co]
 ):
 	__slots__ = ("key_transform_fn", "nest_depth", "nest_length", "nest_keyfn")

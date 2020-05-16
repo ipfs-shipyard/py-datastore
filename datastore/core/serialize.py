@@ -92,8 +92,9 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		return util.stream.receive_channel_from(self.serializer.loads(value))
 	
 	
-	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co]) -> None:
-		"""Stores the object `value` named by `key`.
+	async def _put(self, key: key_.Key, value: util.stream.ReceiveChannel[T_co], *,
+	               create: bool, replace: bool, **kwargs: typing.Any) -> None:
+		"""Stores the objects of the given object stream *value* at name *key*
 		
 		Serializes values on the way in, and stores the serialized data into the
 		``child_datastore``.
@@ -103,12 +104,61 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		key
 			Key naming `value`
 		value
-			The object to store.
+			The objects to store
+		create
+			Create the given key if it does not exist?
+		replace
+			Replace the given key if it does exist?
 		"""
 		value_items = await value.collect()  #FIXME
 		value_bytes = self.serializer.dumps(value_items)
-		await self.child_datastore.put(key, value_bytes)
-
+		value_stream = util.stream.receive_stream_from(value_bytes)
+		await self.child_datastore._put(key, value_stream, create=create, replace=replace, **kwargs)
+	
+	
+	async def _put_new(self, prefix: key_.Key, value: util.stream.ReceiveChannel[T_co],
+	                   **kwargs: typing.Any) -> key_.Key:
+		"""Stores the objects of the given object stream *value* below name *prefix*
+		
+		Serializes values on the way in, and stores the serialized data into the
+		``child_datastore``.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to create the the new target key
+		value
+			The objects to store
+		"""
+		value_items = await value.collect()  #FIXME
+		value_bytes = self.serializer.dumps(value_items)
+		value_stream = util.stream.receive_stream_from(value_bytes)
+		return await self.child_datastore._put_new(prefix, value_stream, **kwargs)
+	
+	
+	async def _put_new_indirect(self, prefix: key_.Key, **kwargs: typing.Any) \
+	      -> objectstore.Datastore._PUT_NEW_INDIRECT_RT[T_co]:
+		"""Stores the objects of the given object stream *value* below name *prefix*
+		
+		Serializes values on the way in, and stores the serialized data into the
+		``child_datastore``.
+		
+		Arguments
+		---------
+		prefix
+			Key below which to create the the new target key
+		value
+			The objects to store
+		"""
+		key, callback = await self.child_datastore._put_new_indirect(prefix, **kwargs)
+		
+		async def callback_wrapper(value: util.stream.ReceiveChannel[T_co]) -> None:
+			value_items = await value.collect()  #FIXME
+			value_bytes = self.serializer.dumps(value_items)
+			value_stream = util.stream.receive_stream_from(value_bytes)
+			await callback(value_stream)
+		return key, callback_wrapper
+	
 	
 	async def query(self, query: query_.Query) -> query_.Cursor:
 		"""Returns an iterable of objects matching criteria expressed in `query`
@@ -133,7 +183,7 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		for field in result:
 			cursor._iterable.extend(self.serializer.loads(field))
 
-		return cursor
+		return cursor  # type: ignore[no-any-return]
 	
 	
 	async def delete(self, key: key_.Key) -> None:
@@ -163,6 +213,33 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 		return await self.child_datastore.contains(key)
 	
 	
+	async def rename(self, key1: key_.Key, key2: key_.Key, *, replace: bool = True) -> None:
+		"""Moves the content at name *key1* to *key2*
+		
+		Arguments
+		---------
+		key1
+			The key to rename, must exist
+		key2
+			The new name of the key; if *replace* is ``False``, a key of the
+			same name may not already exist
+		replace
+			Should an existing key at name *key2* be replaced?
+		
+		Raises
+		------
+		KeyError
+			Key *key1* does not exist in the child datastore
+		KeyError
+			Key *key2* already exists in the child datastore, but *replace* was not ``True``
+		RuntimeError
+			An internal error occurred in the child datastore
+		NotImplementedError
+			The child datastore does not support this operation
+		"""
+		await self.child_datastore.rename(key1, key2, replace=replace)
+	
+	
 	async def stat(self, key: key_.Key) -> util.metadata.ChannelMetadata:
 		"""Returns whether an object named by `key` exists
 		
@@ -180,6 +257,39 @@ class SerializerAdapter(objectstore.Datastore[T_co]):
 			mtime = metadata.mtime,
 			btime = metadata.btime
 		)
+	
+	
+	def datastore_stats(self, selector: key_.Key = None, *, _seen: typing.Set[int] = None) \
+	    -> util.metadata.DatastoreMetadata:
+		"""Returns metadata of the child datastore
+		
+		Arguments
+		---------
+		selector
+			Used to select the backing store for some datastore adapters (such as
+			mount) that have more than one backing store
+			
+			If this is ``None``, the result will be the sum of all datastores
+			attached to this adapter.
+		_seen
+			Set of Python object IDs of datastores already visited while gathering
+			stats from datastore adapters with more than one then one backing store
+			
+			This is required to ensure that no backing datastore is counted more
+			than once if `selector` is ``None``.
+		
+		Raises
+		------
+		RuntimeError
+			An internal error occurred in the child datastore
+		"""
+		_seen = _seen if _seen is not None else set()
+		
+		if id(self.child_datastore) in _seen:
+			return util.metadata.DatastoreMetadata.IGNORE
+		_seen.add(id(self.child_datastore))
+		
+		return self.child_datastore.datastore_stats(selector, _seen=_seen)
 
 
 """

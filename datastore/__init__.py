@@ -17,7 +17,7 @@ __all__ = (
 	"Query", "Cursor",
 	"SerializerAdapter",
 	
-	"abc", "typing", "util"
+	"datastore_abc", "datastore_typing", "util"
 )
 
 
@@ -41,6 +41,6 @@ from .core.serialize import SerializerAdapter
 
 
 ### Exposed submodules ###
-from . import abc
-from . import typing
+from . import datastore_abc
+from . import datastore_typing
 from . import util
